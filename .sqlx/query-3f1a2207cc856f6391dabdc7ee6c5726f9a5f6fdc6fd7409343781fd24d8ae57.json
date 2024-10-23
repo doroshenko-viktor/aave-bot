@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO logs.errors (\"timestamp\", message)\n        VALUES ($1, $2)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamp",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3f1a2207cc856f6391dabdc7ee6c5726f9a5f6fdc6fd7409343781fd24d8ae57"
+}
