@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:latest
+    container_name: postgres_container
+    environment:
+      POSTGRES_USER: bot
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: aave_bot
+    ports:
+      - "5432:5432"
+    # volumes:
+    #   - postgres_aave_bot:/var/lib/postgresql/data
+
+volumes:
+  postgres_aave_bot:

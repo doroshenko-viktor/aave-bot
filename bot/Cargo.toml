@@ -1,0 +1,18 @@
+[package]
+edition = "2021"
+name = "bot"
+version = "0.1.0"
+
+[dependencies]
+alloy = {version = "0.6.4", features = ["full"]}
+async-trait = "0.1"
+chrono = "0.4"
+dotenv = "0.15"
+eyre = "0.6"
+futures = "0.3"
+futures-util = "0.3.28"
+serde = "1.0"
+serde_json = "1"
+sqlx = {version = "0.8", features = ["postgres", "bigdecimal", "time", "runtime-tokio-native-tls", "migrate"]}
+tokio = {version = "1.41.1", features = ["full"]}
+tokio-tungstenite = "0.24"

@@ -1,0 +1,8 @@
+query ActiveUsersQuery {
+  users(where: { totalCollateralETH_gt: 0, totalDebtETH_gt: 0 }) {
+    id
+    totalCollateralETH
+    totalDebtETH
+    healthFactor
+  }
+}

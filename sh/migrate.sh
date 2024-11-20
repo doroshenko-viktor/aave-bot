@@ -1,0 +1,3 @@
+#!/bin/sh
+export DATABASE_URL="postgres://bot:password@localhost:5432/aave_bot"
+sqlx migrate run
