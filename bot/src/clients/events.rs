@@ -16,10 +16,13 @@ pub async fn get_event_logs(
 ) -> Result<Vec<Log>, Error> {
     let filter = Filter::new()
         .address(pool::eth::get_pool_contract_address())
-        .event_signature(Pool::Borrow::SIGNATURE_HASH)
-        // .event_signature(Pool::Repay::SIGNATURE_HASH)
-        // .event_signature(Pool::Withdraw::SIGNATURE_HASH)
-        // .event_signature(Pool::LiquidationCall::SIGNATURE_HASH)
+        .event_signature(vec![
+            Pool::Supply::SIGNATURE_HASH,
+            Pool::Borrow::SIGNATURE_HASH,
+            Pool::Repay::SIGNATURE_HASH,
+            Pool::Withdraw::SIGNATURE_HASH,
+            Pool::LiquidationCall::SIGNATURE_HASH,
+        ])
         .from_block(BlockNumberOrTag::Number(index_low))
         .to_block(BlockNumberOrTag::Number(index_high));
     let logs = provider.get_logs(&filter).await?;

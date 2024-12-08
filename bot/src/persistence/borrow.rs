@@ -1,30 +1,35 @@
-use std::{collections::HashMap, str::FromStr};
+use std::str::FromStr;
 
+use crate::{
+    contracts::pool::Pool::Borrow,
+    persistence::{get_placeholders_str, SCHEMA_BLOCKCHAIN},
+};
 use alloy::rpc::types::Log;
-use eyre::{Error, OptionExt};
+use async_trait::async_trait;
+use eyre::{eyre, Error, OptionExt};
 use sqlx::{types::BigDecimal, Pool, Postgres};
-
-use crate::contracts::pool::Pool::Borrow;
-
-use super::blocks::{BlockDbId, BlockDto};
+use tracing::{debug, error, info, warn};
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct BorrowEventDto {
     pub block_number: u64,
-    log_id: i64,
-    amount: BigDecimal,
-    borrow_rate: BigDecimal,
-    interest_rate_mode: i16,
-    on_behalf_of: Vec<u8>,
-    referral_code: i32,
-    reserve: Vec<u8>,
-    user: Vec<u8>,
+    pub log_id: i64,
+    pub amount: BigDecimal,
+    pub borrow_rate: BigDecimal,
+    pub interest_rate_mode: i16,
+    pub on_behalf_of: Vec<u8>,
+    pub referral_code: i32,
+    pub reserve: Vec<u8>,
+    pub user: Vec<u8>,
 }
 
 impl TryFrom<&Log<Borrow>> for BorrowEventDto {
     type Error = Error;
 
     fn try_from(value: &Log<Borrow>) -> Result<Self, Error> {
+        let block_number = value
+            .block_number
+            .ok_or(eyre!("Log must contain block number"))?;
         let log_id = value
             .log_index
             .ok_or_eyre("Event must have an event log id")? as i64;
@@ -36,6 +41,7 @@ impl TryFrom<&Log<Borrow>> for BorrowEventDto {
         let reserve = value.inner.reserve.to_vec();
         let user = value.inner.user.to_vec();
         Ok(BorrowEventDto {
+            block_number,
             log_id,
             amount,
             borrow_rate,
@@ -48,58 +54,48 @@ impl TryFrom<&Log<Borrow>> for BorrowEventDto {
     }
 }
 
-pub async fn save_borrow_events(
-    pool: &Pool<Postgres>,
-    events: Vec<(BlockDbId, BorrowEventDto)>,
-) -> Result<(), Error> {
-    let mut query_builder = String::from(
-        r#"INSERT INTO eth.borrow_events (
-        block_id,
-        log_id,
-        amount,
-        borrow_rate,
-        interest_rate_mode,
-        on_behalf_of,
-        referral_code,
-        reserve,
-        "user"
-    ) VALUES"#,
-    );
-    let mut ind = 1;
-    let placeholders_amount = events.len() * 3;
-    let mut placeholders = Vec::with_capacity(placeholders_amount as usize);
-    while ind < placeholders_amount {
-        placeholders.push(format!(
-            "(${0}, ${1}, ${2}, ${3}, ${4}, ${5}, ${6}, ${7}, ${8})",
-            ind,
-            ind + 1,
-            ind + 2,
-            ind + 3,
-            ind + 4,
-            ind + 5,
-            ind + 6,
-            ind + 7,
-            ind + 8
-        ));
-        ind += 9;
-        query_builder.push_str(&placeholders.join(", "));
-    }
-    query_builder.push_str(r#" ON CONFLICT (block_id, log_id) DO NOTHING"#);
-    let mut query = sqlx::query(&query_builder);
+#[async_trait]
+pub trait BorrowEventsPersistence {
+    async fn save_borrow_events(&self, events: Vec<BorrowEventDto>) -> Result<(), Error>;
+}
 
-    for event in events {
-        query = query
-            .bind(event.block_id)
-            .bind(event.log_id)
-            .bind(event.amount)
-            .bind(event.borrow_rate)
-            .bind(event.interest_rate_mode)
-            .bind(event.on_behalf_of)
-            .bind(event.referral_code)
-            .bind(event.reserve)
-            .bind(event.user);
-    }
-    query.execute(pool).await;
+#[async_trait]
+impl BorrowEventsPersistence for Pool<Postgres> {
+    async fn save_borrow_events(&self, events: Vec<BorrowEventDto>) -> Result<(), Error> {
+        debug!("Saving {} of borrow events to database", events.len());
+        let mut query_builder = format!(
+            r#"INSERT INTO {}.borrow_events (
+                block_number,
+                log_id,
+                amount,
+                borrow_rate,
+                interest_rate_mode,
+                on_behalf_of,
+                referral_code,
+                reserve,
+                "user"
+            ) VALUES"#,
+            SCHEMA_BLOCKCHAIN
+        );
+        query_builder.push_str(&get_placeholders_str(9, events.len()));
+        query_builder.push_str(r#" ON CONFLICT (block_number, log_id) DO NOTHING"#);
+        let mut query = sqlx::query(&query_builder);
 
-    Ok(())
+        for event in events {
+            query = query
+                .bind(event.block_number as i32)
+                .bind(event.log_id)
+                .bind(event.amount)
+                .bind(event.borrow_rate)
+                .bind(event.interest_rate_mode)
+                .bind(event.on_behalf_of)
+                .bind(event.referral_code)
+                .bind(event.reserve)
+                .bind(event.user);
+        }
+        let res = query.execute(self).await?;
+        info!("INSERTION RES: {:#?}", res);
+
+        Ok(())
+    }
 }

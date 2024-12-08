@@ -1,0 +1,10 @@
+[config]
+first_block = 16797203
+indexing_step = 100
+
+[postgres]
+max_connections = 10
+url = "postgres://bot:password@localhost:5432/aave_bot"
+
+[rpc_config]
+node_url = "wss://mainnet.infura.io/ws/v3/YOUR_INFURA_KEY"

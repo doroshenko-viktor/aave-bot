@@ -12,7 +12,10 @@ pub async fn get_blocks(
 ) -> Vec<Block> {
     let fetch_futures = block_numbers.iter().map(|&block_number| async move {
         provider
-            .get_block_by_number(BlockNumberOrTag::Number(block_number), true)
+            .get_block_by_number(
+                BlockNumberOrTag::Number(block_number),
+                BlockTransactionsKind::Full,
+            )
             .await
     });
 
@@ -25,24 +28,9 @@ pub async fn get_blocks(
 }
 
 pub async fn get_block(provider: &RootProvider<PubSubFrontend>, block_number: u64) -> Block {
-    let block = provider
+    provider
         .get_block(block_number.into(), BlockTransactionsKind::Full)
         .await
         .unwrap()
-        .unwrap();
-    println!("Gas limit: {:?}", block.header.gas_limit);
-    println!("Gas used: {:?}", block.header.gas_used);
-    println!("Miner: {:?}", block.header.miner);
-    println!("Difficulty: {:?}", block.header.difficulty);
-    println!("Block size: {:?}", block.size);
-    let transaction = block
-        .transactions
-        .as_transactions()
         .unwrap()
-        .first()
-        .unwrap();
-    println!("Transaction: {:#?}", transaction);
-    println!("{}", block_number);
-
-    block
 }

@@ -10,14 +10,31 @@ use sqlx::{
     },
     Pool, Postgres,
 };
+use tracing::info;
 
-use crate::contracts::pool::Pool::Borrow;
+use crate::persistence::get_placeholders_str;
+
+use super::PostgresPool;
 
 #[derive(Debug, Eq, sqlx::FromRow)]
 pub struct BlockDto {
-    block_hash: Vec<u8>,
-    block_number: BigDecimal,
-    block_timestamp: PrimitiveDateTime,
+    pub block_hash: Vec<u8>,
+    pub block_number: BigDecimal,
+    pub block_timestamp: PrimitiveDateTime,
+}
+
+impl BlockDto {
+    pub fn new(
+        block_hash: Vec<u8>,
+        block_number: BigDecimal,
+        block_timestamp: PrimitiveDateTime,
+    ) -> Self {
+        Self {
+            block_hash,
+            block_number,
+            block_timestamp,
+        }
+    }
 }
 
 impl PartialEq for BlockDto {
@@ -52,13 +69,34 @@ impl TryFrom<&Block> for BlockDto {
     }
 }
 
+// impl TryFrom<&Log> for BlockDto {
+//     type Error = eyre::Error;
+
+//     fn try_from(value: &Log) -> Result<Self, Self::Error> {
+//         let block_hash = value.block_hash.map(|x|x.to_vec());
+//         let block_number = BigDecimal::from(value.block_number.ok_or_eyre("event log must have a block number")?);
+//         let block_timestamp =value.block_timestamp.map(|timestamp|{
+//             match OffsetDateTime::from_unix_timestamp(timestamp as i64) {
+//                 Ok(x) => Ok(PrimitiveDateTime::new(x.date(), x.time())),
+//                 Err(e) => Err(eyre!("Can't parse timestamp: {}", e)),
+//             }
+//         }).transpose()?;
+
+//         Ok(BlockDto {
+//             block_hash,
+//             block_number,
+//             block_timestamp,
+//         })
+//     }
+// }
+
 pub type BlockNumber = BigDecimal;
-pub type BlockDbId = i64;
+pub type BlockDbId = i32;
 pub type BlockDatabaseIds = HashMap<BlockNumber, BlockDbId>;
 
 #[derive(Debug, sqlx::FromRow)]
 struct BlockInsertResult {
-    db_id: i64,
+    db_id: BlockDbId,
     block_number: BigDecimal,
 }
 
@@ -75,9 +113,10 @@ impl BlocksPersistence for Pool<Postgres> {
 }
 
 pub async fn save_blocks(
-    pool: &Pool<Postgres>,
+    pool: &PostgresPool,
     blocks: Vec<BlockDto>,
 ) -> Result<BlockDatabaseIds, Error> {
+    info!("Saving blocks into database");
     let mut query_builder = String::from(
         r#"INSERT INTO eth.blocks (
             block_hash,
@@ -86,16 +125,9 @@ pub async fn save_blocks(
         ) VALUES "#,
     );
 
-    let mut ind = 1;
-    let placeholders_amount = blocks.len() * 3;
-    let mut placeholders = Vec::new();
-    while ind < placeholders_amount {
-        placeholders.push(format!("(${}, ${}, ${})", ind, ind + 1, ind + 2));
-        ind += 3;
-        query_builder.push_str(&placeholders.join(",\n"));
-    }
+    query_builder.push_str(&get_placeholders_str(3, blocks.len()));
     query_builder.push_str(
-        r#" ON CONFLICT (block_number) DO UPDATE SET block_number = EXCLUDED.block_number RETURNING id, block_number"#,
+        r#" ON CONFLICT (block_number) DO UPDATE SET block_number = EXCLUDED.block_number RETURNING id as db_id, block_number"#,
     );
 
     let mut query = sqlx::query_as::<_, BlockInsertResult>(&query_builder);
@@ -106,13 +138,13 @@ pub async fn save_blocks(
             .bind(block.block_number)
             .bind(block.block_timestamp);
     }
-    let ids = query.fetch_all(pool).await?.into_iter().fold(
-        HashMap::<BigDecimal, i64>::new(),
-        |mut acc, x| {
+    let res = query.fetch_all(pool).await?;
+    let ids = res
+        .into_iter()
+        .fold(HashMap::<BigDecimal, i32>::new(), |mut acc, x| {
             acc.entry(x.block_number).or_insert_with(|| x.db_id);
             acc
-        },
-    );
+        });
 
-    return Ok(ids);
+    Ok(ids)
 }
