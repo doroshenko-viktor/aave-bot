@@ -2,6 +2,15 @@ use config::{Config, ConfigError, Environment, File};
 use eyre::{eyre, Error};
 use serde::Deserialize;
 
+use governor::{
+    clock::{QuantaClock, QuantaInstant},
+    middleware::NoOpMiddleware,
+    state::{InMemoryState, NotKeyed},
+    Quota, RateLimiter,
+};
+
+pub type PrcRateLimiter =
+    RateLimiter<NotKeyed, InMemoryState, QuantaClock, NoOpMiddleware<QuantaInstant>>;
 pub enum AppMode {
     Development,
     Production,

@@ -3,7 +3,6 @@ use sqlx::query;
 use std::fmt::Display;
 
 use super::PostgresPool;
-
 pub enum ConfigurationKey {
     LastHandledBlock,
 }

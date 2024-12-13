@@ -1,10 +1,9 @@
 use std::str::FromStr;
 
 use alloy::rpc::types::Log;
-use async_trait::async_trait;
-use eyre::{eyre, Error, OptionExt, Result};
+use eyre::{eyre, Error, Ok, OptionExt, Result};
 use futures::future::join_all;
-use sqlx::types::BigDecimal;
+use sqlx::{query, query_as, types::BigDecimal};
 use tracing::{debug, info};
 
 use crate::{
@@ -60,26 +59,19 @@ impl TryFrom<&Log<Supply>> for SupplyEventDto {
     }
 }
 
-#[async_trait]
-pub trait SupplyEventsPersistence {
-    async fn save_supply_events(&self, events: Vec<SupplyEventDto>) -> Result<()>;
-}
+pub async fn save_supply_events(pool: &PostgresPool, events: Vec<SupplyEventDto>) -> Result<()> {
+    debug!("Saving {} of borrow events to database", events.len());
+    let mut iter = events.into_iter();
+    let mut events = Vec::new();
 
-#[async_trait]
-impl SupplyEventsPersistence for PostgresPool {
-    async fn save_supply_events(&self, events: Vec<SupplyEventDto>) -> Result<()> {
-        debug!("Saving {} of borrow events to database", events.len());
-        let mut iter = events.into_iter();
-        let mut events = Vec::new();
+    while iter.by_ref().len() > 0 {
+        let chunk: Vec<SupplyEventDto> = iter.by_ref().take(100).collect();
+        events.push(chunk);
+    }
 
-        while iter.by_ref().len() > 0 {
-            let chunk: Vec<SupplyEventDto> = iter.by_ref().take(100).collect();
-            events.push(chunk);
-        }
-
-        let queries = events.into_iter().map(|events| async move {
-            let mut query_builder = format!(
-                r#"INSERT INTO {}.supply_events (
+    let queries = events.into_iter().map(|events| async move {
+        let mut query_builder = format!(
+            r#"INSERT INTO {}.supply_events (
                 block_number,
                 log_id,
                 reserve,
@@ -88,31 +80,58 @@ impl SupplyEventsPersistence for PostgresPool {
                 amount,
                 referral_code
             ) VALUES"#,
-                SCHEMA_BLOCKCHAIN
-            );
-            query_builder.push_str(&get_placeholders_str(7, events.len()));
-            query_builder.push_str(r#" ON CONFLICT (block_number, log_id) DO NOTHING"#);
-            let query = events
-                .into_iter()
-                .fold(sqlx::query(&query_builder), |query, event| {
-                    query
-                        .bind(event.block_number)
-                        .bind(event.log_id)
-                        .bind(event.reserve)
-                        .bind(event.user)
-                        .bind(event.on_behalf_of)
-                        .bind(event.amount)
-                        .bind(event.referral_code)
-                });
+            SCHEMA_BLOCKCHAIN
+        );
+        query_builder.push_str(&get_placeholders_str(7, events.len()));
+        query_builder.push_str(r#" ON CONFLICT (block_number, log_id) DO NOTHING"#);
+        let query = events
+            .into_iter()
+            .fold(sqlx::query(&query_builder), |query, event| {
+                query
+                    .bind(event.block_number)
+                    .bind(event.log_id)
+                    .bind(event.reserve)
+                    .bind(event.user)
+                    .bind(event.on_behalf_of)
+                    .bind(event.amount)
+                    .bind(event.referral_code)
+            });
 
-            query.execute(self).await
-        });
+        query.execute(pool).await
+    });
 
-        let results = join_all(queries).await;
-        info!("INSERTION RESULTS:");
-        for res in results {
-            info!("{:#?}", res);
-        }
-        Ok(())
+    let results = join_all(queries).await;
+    info!("INSERTION RESULTS:");
+    for res in results {
+        info!("{:#?}", res);
     }
+    Ok(())
+}
+
+pub async fn get_supply_events(
+    pool: &PostgresPool,
+    from_block: i32,
+    to_block: i32,
+) -> Result<Vec<SupplyEventDto>> {
+    let events = query_as!(
+        SupplyEventDto,
+        r#"
+            select
+                block_number,
+                log_id,
+                reserve,
+                "user",
+                on_behalf_of,
+                amount,
+                referral_code
+            from blockchain.supply_events
+            where block_number >= $1 and block_number <= $2
+        "#,
+        from_block,
+        to_block
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(events)
 }

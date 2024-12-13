@@ -5,6 +5,9 @@ pub mod liquidation;
 pub mod repay;
 pub mod supply;
 pub mod withdraw;
+pub mod errors;
+pub mod assets;
+pub mod events;
 
 mod borrow_test;
 

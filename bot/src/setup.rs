@@ -1,22 +1,29 @@
-use alloy::
-    providers::{ProviderBuilder, WsConnect}
-;
+use alloy::providers::{ProviderBuilder, WsConnect};
 use dotenv::dotenv;
 use eyre::{Error, Result};
+use governor::{
+    clock::{QuantaClock, QuantaInstant},
+    middleware::NoOpMiddleware,
+    state::{InMemoryState, NotKeyed},
+    Quota, RateLimiter,
+};
 use sqlx::postgres::PgPoolOptions;
-use std::env;
+use std::{env, num::NonZeroU32};
 use tracing::debug;
 use tracing_subscriber::FmtSubscriber;
 
 use crate::{
     configuration::{AppMode, PostgresConfig, RpcProviderConfig, Settings},
-    persistence::PostgresPool, NodeProvider,
+    persistence::PostgresPool,
+    NodeProvider,
 };
 
 pub struct Application {
     pub db_pool: PostgresPool,
     pub rpc_provider: NodeProvider,
     pub settings: Settings,
+    pub rpc_rate_limiter:
+        RateLimiter<NotKeyed, InMemoryState, QuantaClock, NoOpMiddleware<QuantaInstant>>,
 }
 
 pub async fn configure_app() -> Result<Application, Error> {
@@ -27,11 +34,13 @@ pub async fn configure_app() -> Result<Application, Error> {
     let settings = get_settings(&mode)?;
     let db_pool = get_pool(&settings.postgres).await?;
     let rpc_provider = get_rpc_provider(&settings.rpc_config).await?;
+    let rpc_rate_limiter = RateLimiter::direct(Quota::per_second(NonZeroU32::new(5).unwrap()));
 
     Ok(Application {
         db_pool,
         rpc_provider,
         settings,
+        rpc_rate_limiter,
     })
 }
 

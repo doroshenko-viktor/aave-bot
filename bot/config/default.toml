@@ -1,6 +1,7 @@
 [config]
-first_block = 16797203
-indexing_step = 100
+first_block = 1
+# first_block = 16496817
+indexing_step = 10000
 
 [postgres]
 max_connections = 10
