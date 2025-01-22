@@ -1,21 +1,27 @@
-use eyre::{Ok, OptionExt, Result};
+use eyre::Result;
 use sqlx::query;
 use std::fmt::Display;
 
-use super::PostgresPool;
+use crate::shared::persistence::PostgresPool;
+
 pub enum ConfigurationKey {
+    /* last downloaded blockchain data block */
     LastHandledBlock,
+    /* last calculated user balances block */
+    LastUserBalancesBlock,
 }
 
 impl Display for ConfigurationKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ConfigurationKey::LastHandledBlock => write!(f, "last_handled_block"),
+            ConfigurationKey::LastUserBalancesBlock => write!(f, "last_user_balances_block"),
         }
     }
 }
 
-pub async fn set(pool: &PostgresPool, key: ConfigurationKey, value: &str) -> Result<()> {
+pub async fn config_set(key: ConfigurationKey, value: &str) -> Result<()> {
+    pool: &PostgresPool, 
     let key = key.to_string();
     let _ = query!(
         r#"
@@ -33,7 +39,7 @@ pub async fn set(pool: &PostgresPool, key: ConfigurationKey, value: &str) -> Res
     Ok(())
 }
 
-pub async fn get(pool: &PostgresPool, key: ConfigurationKey) -> Result<String> {
+pub async fn config_get(pool: &PostgresPool, key: ConfigurationKey) -> Result<String> {
     let key = key.to_string();
     let result = query!(
         r#"

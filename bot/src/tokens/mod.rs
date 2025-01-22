@@ -1,8 +1,10 @@
-use crate::persistence::get_placeholders_str;
-
-use super::{Address, PostgresPool};
+use crate::{
+    app::entities::ERC20TokenEntity,
+    shared::persistence::{get_placeholders_str, Address, PostgresPool},
+};
+use bigdecimal::BigDecimal;
 use eyre::Result;
-use sqlx::{query_as, types::BigDecimal};
+use sqlx::query_as;
 use tracing::{debug, info};
 
 #[derive(Debug, sqlx::FromRow)]
@@ -14,11 +16,12 @@ pub struct ERC20TokenDto {
     pub total_supply: BigDecimal,
 }
 
-pub async fn get_tokens(pool: &PostgresPool) -> Result<Vec<ERC20TokenDto>> {
+pub async fn get_tokens(pool: &PostgresPool) -> Result<Vec<ERC20TokenEntity>> {
     let tokens = query_as!(
-        ERC20TokenDto,
+        ERC20TokenEntity,
         r#"
         select
+            id,
             address,
             name,
             symbol,
@@ -27,7 +30,8 @@ pub async fn get_tokens(pool: &PostgresPool) -> Result<Vec<ERC20TokenDto>> {
         from blockchain.tokens;
         "#
     )
-    .fetch_all(pool).await?;
+    .fetch_all(pool)
+    .await?;
 
     Ok(tokens)
 }

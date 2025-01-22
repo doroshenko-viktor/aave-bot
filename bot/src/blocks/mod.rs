@@ -12,9 +12,7 @@ use sqlx::{
 };
 use tracing::info;
 
-use crate::persistence::get_placeholders_str;
-
-use super::PostgresPool;
+use crate::shared::persistence::{get_placeholders_str, PostgresPool};
 
 #[derive(Debug, Eq, sqlx::FromRow)]
 pub struct BlockDto {

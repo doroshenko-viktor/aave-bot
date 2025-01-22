@@ -8,40 +8,50 @@ use governor::{
     Quota, RateLimiter,
 };
 use sqlx::postgres::PgPoolOptions;
-use std::{env, num::NonZeroU32};
+use std::{env, num::NonZeroU32, sync::Arc};
 use tracing::debug;
 use tracing_subscriber::FmtSubscriber;
 
 use crate::{
-    configuration::{AppMode, PostgresConfig, RpcProviderConfig, Settings},
-    persistence::PostgresPool,
+    configuration::{
+        globals::{DB_POOL, RPC_PROVIDER, SETTINGS},
+        AppMode, PostgresConfig, RpcProviderConfig, Settings,
+    },
+    shared::persistence::PostgresPool,
     NodeProvider,
 };
 
 pub struct Application {
-    pub db_pool: PostgresPool,
-    pub rpc_provider: NodeProvider,
-    pub settings: Settings,
     pub rpc_rate_limiter:
         RateLimiter<NotKeyed, InMemoryState, QuantaClock, NoOpMiddleware<QuantaInstant>>,
 }
 
+/**
+ * Configuration relies on some global variables, so considering downsides need to check initialize order to avoid failures
+ */
 pub async fn configure_app() -> Result<Application, Error> {
     dotenv().ok();
     let mode = AppMode::try_from(&env::var("APP_MODE").unwrap_or("dev".into())[..])?;
     configure_environment_defaults(&mode);
     configure_logging(&mode);
+
     let settings = get_settings(&mode)?;
-    let db_pool = get_pool(&settings.postgres).await?;
-    let rpc_provider = get_rpc_provider(&settings.rpc_config).await?;
+    SETTINGS.set(settings);
+    let Settings {
+        postgres,
+        rpc_config,
+        ..
+    } = SETTINGS.get().unwrap().clone();
+
+    let db_pool = get_pool(&postgres).await?;
+    DB_POOL.set(db_pool);
+
+    let rpc_provider = get_rpc_provider(&rpc_config).await?;
+    RPC_PROVIDER.set(rpc_provider);
+
     let rpc_rate_limiter = RateLimiter::direct(Quota::per_second(NonZeroU32::new(5).unwrap()));
 
-    Ok(Application {
-        db_pool,
-        rpc_provider,
-        settings,
-        rpc_rate_limiter,
-    })
+    Ok(Application { rpc_rate_limiter })
 }
 
 fn configure_logging(mode: &AppMode) {
@@ -79,6 +89,12 @@ pub async fn get_pool(config: &PostgresConfig) -> Result<PostgresPool> {
         .connect(&config.url)
         .await?;
     Ok(pool)
+}
+
+pub fn get_pool_lazy(config: &PostgresConfig) -> Result<PostgresPool> {
+    Ok(PgPoolOptions::new()
+        .max_connections(config.max_connections)
+        .connect_lazy(&config.url)?)
 }
 
 pub async fn get_rpc_provider(config: &RpcProviderConfig) -> Result<NodeProvider> {

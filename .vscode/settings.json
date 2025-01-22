@@ -1,0 +1,11 @@
+{
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "server": "localhost",
+            "driver": "PostgreSQL",
+            "name": "aave",
+            "connectString": "postgres://bot:password@localhost:5432/aave_bot"
+        }
+    ]
+}

@@ -1,14 +1,9 @@
 use crate::clients::events as events_client;
-use crate::configuration::PrcRateLimiter;
+use crate::configuration::persistent_confit::{config_set, ConfigurationKey};
+use crate::configuration::{self, PrcRateLimiter};
 use crate::contracts::pool::Pool::{self, Borrow, LiquidationCall, Repay, Supply, Withdraw};
-use crate::persistence::borrow::{save_borrow_events, BorrowEventDto};
-use crate::persistence::configuration::{self, ConfigurationKey};
-use crate::persistence::errors::save_error;
-use crate::persistence::liquidation::{save_liquidation_events, LiquidationEventDto};
-use crate::persistence::repay::{save_repay_events, RepayEventDto};
-use crate::persistence::supply::{save_supply_events, SupplyEventDto};
-use crate::persistence::withdraw::{save_withdraw_events, WithdrawEventDto};
-use crate::persistence::PostgresPool;
+use crate::shared::persistence::PostgresPool;
+use crate::utils::iterators::GapSequence;
 use crate::NodeProvider;
 use alloy::providers::Provider;
 use alloy::rpc::types::Log;
@@ -16,40 +11,50 @@ use alloy::sol_types::SolEvent;
 use eyre::{eyre, Error, Result};
 use futures::future::join_all;
 use futures::{task, FutureExt};
+use sqlx::PgPool;
 use tracing::{debug, error, info};
 
 pub struct FetchEventsConfig {
-    pub first_block: u64,
+    pub first_block_number: u64,
+    pub last_block_number: u64,
+    /**
+     * Defines how many blocks to fetch in single step
+     */
     pub indexing_step: u64,
 }
 
+/**
+ * Fetch and save blockchain events to database
+ */
 pub async fn fetch_events(
     provider: &NodeProvider,
     pool: &PostgresPool,
     config: FetchEventsConfig,
     rate_limiter: PrcRateLimiter,
 ) -> Result<()> {
-    let current_block_number = provider.get_block_number().await?;
-    let mut index_low = config.first_block;
-    let mut index_high = index_low + config.indexing_step;
+    // let current_block_number = provider.get_block_number().await?;
+    // let mut index_low = config.first_block_number;
+    // let mut index_high = index_low + config.indexing_step;
+    let mut lower_index = 0u64;
 
-    for _ in 0..current_block_number {
-        // time::sleep(Duration::from_millis(100)).await;
-        info!("CURRENT HIGH INDEX: {}", index_high);
+    for (lower, higher) in GapSequence::new(
+        config.first_block_number,
+        config.last_block_number,
+        config.indexing_step,
+    ) {
+        debug!("CURRENT HIGH INDEX: {}", higher);
         rate_limiter.until_ready().await;
-        let logs = events_client::get_event_logs(provider, index_low, index_high).await?;
+        let logs = events_client::get_event_logs(provider, lower, higher).await?;
         debug!("Retrieved logs amount: {}", logs.len());
 
-        index_low = index_high + 1;
-        index_high += config.indexing_step;
-
-        configuration::set(
-            pool,
+        config_set(
             ConfigurationKey::LastHandledBlock,
-            &index_high.to_string(),
+            &higher.to_string(),
         )
         .await?;
+    }
 
+    for _ in 0..config.last_block_number {
         let no_logs = logs.is_empty();
         if no_logs {
             debug!("No events in this block range");
@@ -63,48 +68,52 @@ pub async fn fetch_events(
                 acc
             });
 
-        let EventGroups {
-            supplies,
-            borrows,
-            errors,
-            repays,
-            liquidations,
-            withdrawals,
-        } = events;
-
-        let mut save_events_futures = Vec::new();
-
-        if !supplies.is_empty() {
-            save_events_futures.push(save_supply_events(pool, supplies).boxed());
-        }
-        if !borrows.is_empty() {
-            save_events_futures.push(save_borrow_events(pool, borrows).boxed());
-        }
-        if !repays.is_empty() {
-            save_events_futures.push(save_repay_events(pool, repays).boxed());
-        }
-        if !withdrawals.is_empty() {
-            save_events_futures.push(save_withdraw_events(pool, withdrawals).boxed());
-        }
-        if !liquidations.is_empty() {
-            save_events_futures.push(save_liquidation_events(pool, liquidations).boxed());
-        }
-
-        let results = join_all(save_events_futures).await;
-        for result in results {
-            if let Err(err) = result {
-                error!("Error inserting events to db: {:#?}", err);
-            }
-        }
-
-        if !errors.is_empty() {
-            for error in errors {
-                save_error(pool, format!("Error during save events history: {}", error)).await?;
-            }
-        }
+        save_events(pool, events).await?;
     }
 
     Ok(())
+}
+
+async fn save_events(pool: &PgPool, events: EventGroups) -> Result<()> {
+    let EventGroups {
+        supplies,
+        borrows,
+        errors,
+        repays,
+        liquidations,
+        withdrawals,
+    } = events;
+
+    let mut save_events_futures = Vec::new();
+
+    if !supplies.is_empty() {
+        save_events_futures.push(save_supply_events(pool, supplies).boxed());
+    }
+    if !borrows.is_empty() {
+        save_events_futures.push(save_borrow_events(pool, borrows).boxed());
+    }
+    if !repays.is_empty() {
+        save_events_futures.push(save_repay_events(pool, repays).boxed());
+    }
+    if !withdrawals.is_empty() {
+        save_events_futures.push(save_withdraw_events(pool, withdrawals).boxed());
+    }
+    if !liquidations.is_empty() {
+        save_events_futures.push(save_liquidation_events(pool, liquidations).boxed());
+    }
+
+    let results = join_all(save_events_futures).await;
+    for result in results {
+        if let Err(err) = result {
+            error!("Error inserting events to db: {:#?}", err);
+        }
+    }
+
+    if !errors.is_empty() {
+        for error in errors {
+            save_error(pool, format!("Error during save events history: {}", error)).await?;
+        }
+    }
 }
 
 #[derive(Debug, Default)]

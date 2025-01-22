@@ -1,9 +1,13 @@
+pub mod get;
+pub mod save;
+
 use std::str::FromStr;
 
-use crate::contracts::pool::Pool::Repay;
-use crate::persistence::SCHEMA_BLOCKCHAIN;
+use crate::{
+    contracts::pool::Pool::Repay,
+    shared::persistence::{get_placeholders_str, Address, PostgresPool, SCHEMA_BLOCKCHAIN},
+};
 
-use super::{Address, PostgresPool};
 use alloy::rpc::types::Log;
 use eyre::{Error, OptionExt, Result};
 use sqlx::{query_as, types::BigDecimal};
@@ -43,44 +47,6 @@ impl TryFrom<&Log<Repay>> for RepayEventDto {
             use_a_tokens: value.data().useATokens,
         })
     }
-}
-
-pub async fn save_repay_events(
-    pool: &PostgresPool,
-    events: Vec<RepayEventDto>,
-) -> Result<()> {
-    debug!("Saving {} repay events", events.len());
-    let mut query_builder = format!(
-        r#"INSERT INTO {}.repay_events (
-                block_number,
-                log_id,
-                amount,
-                reserve,
-                "user",
-                repayer,
-                use_a_tokens
-            ) VALUES"#,
-        SCHEMA_BLOCKCHAIN
-    );
-    let placeholders = super::get_placeholders_str(7, events.len());
-    query_builder.push_str(&placeholders);
-    query_builder.push_str(r#" ON CONFLICT (block_number, log_id) DO NOTHING"#);
-    let mut query = sqlx::query(&query_builder);
-
-    for event in events {
-        query = query
-            .bind(event.block_number as i32)
-            .bind(event.log_id)
-            .bind(event.amount)
-            .bind(event.reserve)
-            .bind(event.user)
-            .bind(event.repayer)
-            .bind(event.use_a_tokens);
-    }
-    let res = query.execute(pool).await?;
-    debug!("Insert repay events result: {:#?}", res);
-
-    Ok(())
 }
 
 pub async fn get_repays_sorted_by_block(

@@ -1,3 +1,6 @@
+//TODO:
+// - refactor and split it to modules
+// - create list particular user actions history function
 use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
@@ -7,13 +10,15 @@ use std::{
 use alloy::hex;
 use bigdecimal::BigDecimal;
 use bot::{
+    app::entities::ERC20TokenEntity,
     persistence::{
-        assets::{get_tokens, ERC20TokenDto},
+        accounts::{self, AccountCollateralDto, AccountDebtDto, AccountInsertDto},
         borrow::{get_borrows_sorted_by_block, BorrowEventDto},
         configuration::{self, ConfigurationKey},
         liquidation::{get_liquidations_sorted_by_block, LiquidationEventDto},
         repay::{get_repays_sorted_by_block, RepayEventDto},
         supply::{get_supply_events, SupplyEventDto},
+        tokens::{self, get_tokens, ERC20TokenDto},
         withdraw::{get_withdraw_events, WithdrawEventDto},
         PostgresPool,
     },
@@ -23,6 +28,9 @@ use eyre::Result;
 use tracing::{debug, error};
 
 type ReserveAsset = Vec<u8>;
+
+const TEST: bool = true;
+
 pub enum Event {
     Supply(SupplyEventDto),
     Borrow(BorrowEventDto),
@@ -137,18 +145,17 @@ struct UserDataStore {
 
 impl UserDataStore {
     pub fn handle_event(&mut self, event: Event) {
-        let test_user = "f200cb437bfe0ad696ecf7cb4264192c7034bbe9".to_string();
-        let test = false;
+        let x = hex::decode("523B27014B865C4D8F3DAC9C6E3B1BAD13D22B87").unwrap();
+        let test_user = hex::encode(x);
         match event {
             Event::Supply(event) => {
-                if test
+                if TEST
                     && (hex::encode(event.user.clone()) != test_user
                         && hex::encode(event.on_behalf_of.clone()) != test_user)
                 {
                     return;
                 }
                 debug!("Handle supply");
-                // let user_data = self.data.entry(event.user.clone()).or_default();
                 let on_behalf_of = hex::encode(event.on_behalf_of.clone());
                 let user = hex::encode(event.user.clone());
                 debug!("\tOn behalf of: {}; user: {}", on_behalf_of, user);
@@ -160,7 +167,7 @@ impl UserDataStore {
                 user_data.handle_supply(&event);
             }
             Event::Borrow(event) => {
-                if test
+                if TEST
                     && (hex::encode(event.user.clone()) != test_user
                         && hex::encode(event.on_behalf_of.clone()) != test_user)
                 {
@@ -179,7 +186,7 @@ impl UserDataStore {
                 user_data.handle_borrow(&event);
             }
             Event::Repay(event) => {
-                if test && hex::encode(event.user.clone()) != test_user {
+                if TEST && hex::encode(event.user.clone()) != test_user {
                     return;
                 }
                 debug!("Handle repay");
@@ -187,7 +194,7 @@ impl UserDataStore {
                 user_data.handle_repay(&event);
             }
             Event::Withdraw(event) => {
-                if test && hex::encode(event.user.clone()) != test_user {
+                if TEST && hex::encode(event.user.clone()) != test_user {
                     return;
                 }
                 debug!("Handle withdraw");
@@ -195,7 +202,7 @@ impl UserDataStore {
                 user_data.handle_withdraw(&event);
             }
             Event::Liquidation(event) => {
-                if test && hex::encode(event.user.clone()) != test_user {
+                if TEST && hex::encode(event.user.clone()) != test_user {
                     return;
                 }
                 debug!("Handle liquidation");
@@ -217,24 +224,90 @@ pub async fn main() -> Result<()> {
     let last_handled_block: i32 = configuration::get(&db_pool, ConfigurationKey::LastHandledBlock)
         .await?
         .parse()?;
+    let last_user_balances_block: i32 = if !TEST {
+        configuration::get(&db_pool, ConfigurationKey::LastUserBalancesBlock)
+            .await?
+            .parse()?
+    } else {
+        1
+    };
+
     let mut user_data_store: UserDataStore = UserDataStore::default();
 
-    let from_block = 1;
+    let from_block = last_user_balances_block;
     let to_block = last_handled_block;
     let events = get_events(&db_pool, from_block, to_block).await?;
     for event in events {
         user_data_store.handle_event(event);
     }
 
-    let tokens: HashMap<Vec<u8>, ERC20TokenDto> = get_tokens(&db_pool)
+    let tokens: HashMap<Vec<u8>, ERC20TokenEntity> = get_tokens(&db_pool)
         .await?
         .into_iter()
         .map(|token| (token.address.clone(), token))
         .collect();
 
+    let account_dtos: Vec<AccountInsertDto> = user_data_store
+        .data
+        .iter()
+        .map(|cur| AccountInsertDto {
+            address: cur.0.clone(),
+        })
+        .collect();
+    if !account_dtos.is_empty() {
+        let account_ids_by_address: HashMap<Vec<u8>, i32> =
+            accounts::save_accounts(&db_pool, account_dtos)
+                .await?
+                .into_iter()
+                .map(|cur| (cur.address, cur.id))
+                .collect();
+
+        let (collateral_dtos, debt_dtos) =
+            user_data_store
+                .data
+                .iter()
+                .fold((Vec::new(), Vec::new()), |mut acc, cur| {
+                    let account_id = account_ids_by_address
+                        .get(cur.0)
+                        .expect("Account id from db entity not found");
+                    let collateral_dtos = cur.1.collateral.iter().map(|collateral| {
+                        let token = tokens
+                            .get(&collateral.1.reserve)
+                            .expect("token for collateral not found");
+                        AccountCollateralDto {
+                            account_id: *account_id,
+                            asset_id: token.id,
+                            amount: collateral.1.amount.clone(),
+                        }
+                    });
+                    let debt_dtos = cur.1.debt.iter().map(|debt| {
+                        let token = tokens
+                            .get(&debt.1.reserve)
+                            .expect("token for debt not found");
+                        AccountDebtDto {
+                            account_id: *account_id,
+                            asset_id: token.id,
+                            amount: debt.1.amount.clone(),
+                        }
+                    });
+                    acc.0.extend(collateral_dtos);
+                    acc.1.extend(debt_dtos);
+                    acc
+                });
+
+        accounts::save_collaterals(&db_pool, collateral_dtos).await?;
+        accounts::save_debts(&db_pool, debt_dtos).await?;
+        configuration::set(
+            &db_pool,
+            ConfigurationKey::LastUserBalancesBlock,
+            &last_handled_block.to_string(),
+        )
+        .await?;
+    }
+
     let user_count = user_data_store.data.keys().len();
     for (user_address, user_data) in user_data_store.data {
-        let collateral_tokens: Vec<(&ERC20TokenDto, Asset)> = user_data
+        let collateral_tokens: Vec<(&ERC20TokenEntity, Asset)> = user_data
             .collateral
             .into_iter()
             .map(|asset| {
@@ -246,7 +319,7 @@ pub async fn main() -> Result<()> {
                 (token.unwrap(), asset.1)
             })
             .collect();
-        let debt_tokens: Vec<(&ERC20TokenDto, Asset)> = user_data
+        let debt_tokens: Vec<(&ERC20TokenEntity, Asset)> = user_data
             .debt
             .into_iter()
             .map(|asset| {
@@ -281,23 +354,23 @@ pub async fn main() -> Result<()> {
 }
 
 async fn get_events(db_pool: &PostgresPool, from_block: i32, to_block: i32) -> Result<Vec<Event>> {
-    let mut supplies = get_supply_events(&db_pool, from_block, to_block)
+    let mut supplies = get_supply_events(db_pool, from_block, to_block)
         .await?
         .into_iter()
         .peekable();
-    let mut borrows = get_borrows_sorted_by_block(&db_pool, from_block, to_block)
+    let mut borrows = get_borrows_sorted_by_block(db_pool, from_block, to_block)
         .await?
         .into_iter()
         .peekable();
-    let mut repays = get_repays_sorted_by_block(&db_pool, from_block, to_block)
+    let mut repays = get_repays_sorted_by_block(db_pool, from_block, to_block)
         .await?
         .into_iter()
         .peekable();
-    let mut withdrawals = get_withdraw_events(&db_pool, from_block, to_block)
+    let mut withdrawals = get_withdraw_events(db_pool, from_block, to_block)
         .await?
         .into_iter()
         .peekable();
-    let mut liquidations = get_liquidations_sorted_by_block(&db_pool, from_block, to_block)
+    let mut liquidations = get_liquidations_sorted_by_block(db_pool, from_block, to_block)
         .await?
         .into_iter()
         .peekable();

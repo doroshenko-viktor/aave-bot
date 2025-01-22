@@ -1,16 +1,3 @@
-pub mod blocks;
-pub mod borrow;
-pub mod configuration;
-pub mod liquidation;
-pub mod repay;
-pub mod supply;
-pub mod withdraw;
-pub mod errors;
-pub mod assets;
-pub mod events;
-
-mod borrow_test;
-
 use sqlx::{Pool, Postgres};
 
 pub const SCHEMA_BLOCKCHAIN: &str = "blockchain";
@@ -19,7 +6,7 @@ pub const SCHEMA_CONFIG: &str = "config";
 pub type PostgresPool = Pool<Postgres>;
 pub type Address = Vec<u8>;
 
-fn get_placeholders_str(placeholders_amount: usize, rows_amount: usize) -> String {
+pub fn get_placeholders_str(placeholders_amount: usize, rows_amount: usize) -> String {
     let mut ind = 0;
     let mut placeholders = Vec::<String>::with_capacity(rows_amount);
 

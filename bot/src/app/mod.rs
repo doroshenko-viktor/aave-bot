@@ -1,1 +1,1 @@
-pub mod events_history;
+pub mod entities;

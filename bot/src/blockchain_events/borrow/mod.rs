@@ -1,16 +1,12 @@
+pub mod get;
+pub mod save;
 use std::str::FromStr;
 
-use crate::{
-    contracts::pool::Pool::Borrow,
-    persistence::{get_placeholders_str, SCHEMA_BLOCKCHAIN},
-};
+use crate::{contracts::pool::Pool::Borrow, shared::persistence::PostgresPool};
 use alloy::rpc::types::Log;
-use async_trait::async_trait;
 use eyre::{eyre, Error, OptionExt, Result};
-use sqlx::{query, query_as, types::BigDecimal, Pool, Postgres};
+use sqlx::types::BigDecimal;
 use tracing::{debug, error, info, warn};
-
-use super::PostgresPool;
 
 /**
  * @dev Emitted on borrow() and flashLoan() when debt needs to be opened
@@ -65,73 +61,4 @@ impl TryFrom<&Log<Borrow>> for BorrowEventDto {
             user,
         })
     }
-}
-
-pub async fn save_borrow_events(pool: &PostgresPool, events: Vec<BorrowEventDto>) -> Result<()> {
-    debug!("Saving {} of borrow events to database", events.len());
-    let mut query_builder = format!(
-        r#"INSERT INTO {}.borrow_events (
-                block_number,
-                log_id,
-                amount,
-                borrow_rate,
-                interest_rate_mode,
-                on_behalf_of,
-                referral_code,
-                reserve,
-                "user"
-            ) VALUES"#,
-        SCHEMA_BLOCKCHAIN
-    );
-    query_builder.push_str(&get_placeholders_str(9, events.len()));
-    query_builder.push_str(r#" ON CONFLICT (block_number, log_id) DO NOTHING"#);
-    let mut query = sqlx::query(&query_builder);
-
-    for event in events {
-        query = query
-            .bind(event.block_number as i32)
-            .bind(event.log_id)
-            .bind(event.amount)
-            .bind(event.borrow_rate)
-            .bind(event.interest_rate_mode)
-            .bind(event.on_behalf_of)
-            .bind(event.referral_code)
-            .bind(event.reserve)
-            .bind(event.user);
-    }
-    let res = query.execute(pool).await?;
-    info!("INSERTION RES: {:#?}", res);
-
-    Ok(())
-}
-
-pub async fn get_borrows_sorted_by_block(
-    pool: &PostgresPool,
-    from_block: i32,
-    to_block: i32,
-) -> Result<Vec<BorrowEventDto>> {
-    let events = query_as!(
-        BorrowEventDto,
-        r#"
-        select
-            block_number,
-            log_id,
-            amount,
-            borrow_rate,
-            interest_rate_mode,
-            on_behalf_of,
-            referral_code,
-            reserve,
-            "user"
-        from blockchain.borrow_events
-        where block_number >= $1 and block_number <= $2
-        order by block_number asc;
-        "#,
-        from_block,
-        to_block
-    )
-    .fetch_all(pool)
-    .await?;
-
-    Ok(events)
 }

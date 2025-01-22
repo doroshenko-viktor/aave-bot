@@ -1,6 +1,5 @@
-use crate::utils::chrono_to_primitive_datetime;
+use crate::{shared::persistence::PostgresPool, utils::chrono_to_primitive_datetime};
 
-use super::PostgresPool;
 use chrono::Utc;
 use eyre::Result;
 use sqlx::query;

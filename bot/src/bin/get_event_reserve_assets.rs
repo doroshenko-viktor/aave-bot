@@ -3,7 +3,7 @@ use std::{collections::HashSet, str::FromStr, sync::Arc};
 use alloy::{primitives::Address, sol};
 use bot::{
     persistence::{
-        assets::{save_tokens, ERC20TokenDto},
+        tokens::{save_tokens, ERC20TokenDto},
         borrow::get_borrows_sorted_by_block,
         configuration::{self, ConfigurationKey},
         supply::get_supply_events,
