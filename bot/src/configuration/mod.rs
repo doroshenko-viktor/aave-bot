@@ -1,5 +1,5 @@
 pub mod globals;
-pub mod persistent_confit;
+pub mod persistent_config;
 use eyre::{Error, Ok, Result};
 
 use config::{Config, ConfigError, Environment, File};
@@ -13,7 +13,7 @@ use governor::{
     RateLimiter,
 };
 
-pub type PrcRateLimiter =
+pub type RpcRateLimiter =
     RateLimiter<NotKeyed, InMemoryState, QuantaClock, NoOpMiddleware<QuantaInstant>>;
 
 pub enum AppMode {

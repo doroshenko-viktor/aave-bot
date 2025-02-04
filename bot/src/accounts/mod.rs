@@ -1,9 +1,13 @@
+pub mod data_store;
+pub mod entities;
 pub mod get;
 pub mod save;
+pub mod types;
+pub mod value_objects;
 
 use crate::{
     app::entities::AccountEntity,
-    shared::persistence::{get_placeholders_str, PostgresPool},
+    shared::persistence::{get_placeholders_str, DbPool},
 };
 use bigdecimal::BigDecimal;
 use eyre::Result;

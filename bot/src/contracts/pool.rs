@@ -24,6 +24,7 @@ pub mod eth {
     use alloy::primitives::Address;
     pub const POOL_CONTRACT_ADDRESS: &str = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2";
 
+    //TODO: this should be a part of config
     pub fn get_pool_contract_address() -> Address {
         Address::from_str(POOL_CONTRACT_ADDRESS).unwrap()
     }

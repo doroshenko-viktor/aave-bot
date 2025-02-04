@@ -8,22 +8,21 @@ use governor::{
     Quota, RateLimiter,
 };
 use sqlx::postgres::PgPoolOptions;
-use std::{env, num::NonZeroU32, sync::Arc};
+use std::{env, num::NonZeroU32};
 use tracing::debug;
 use tracing_subscriber::FmtSubscriber;
 
 use crate::{
     configuration::{
         globals::{DB_POOL, RPC_PROVIDER, SETTINGS},
-        AppMode, PostgresConfig, RpcProviderConfig, Settings,
+        AppMode, PostgresConfig, RpcProviderConfig, RpcRateLimiter, Settings,
     },
-    shared::persistence::PostgresPool,
-    NodeProvider,
+    shared::persistence::DbPool,
+    PubSubNodeProvider,
 };
 
 pub struct Application {
-    pub rpc_rate_limiter:
-        RateLimiter<NotKeyed, InMemoryState, QuantaClock, NoOpMiddleware<QuantaInstant>>,
+    pub rpc_rate_limiter: RpcRateLimiter,
 }
 
 /**
@@ -83,7 +82,7 @@ pub fn get_settings(mode: &AppMode) -> Result<Settings, Error> {
     Ok(settings)
 }
 
-pub async fn get_pool(config: &PostgresConfig) -> Result<PostgresPool> {
+pub async fn get_pool(config: &PostgresConfig) -> Result<DbPool> {
     let pool = PgPoolOptions::new()
         .max_connections(config.max_connections)
         .connect(&config.url)
@@ -91,13 +90,13 @@ pub async fn get_pool(config: &PostgresConfig) -> Result<PostgresPool> {
     Ok(pool)
 }
 
-pub fn get_pool_lazy(config: &PostgresConfig) -> Result<PostgresPool> {
+pub fn get_pool_lazy(config: &PostgresConfig) -> Result<DbPool> {
     Ok(PgPoolOptions::new()
         .max_connections(config.max_connections)
         .connect_lazy(&config.url)?)
 }
 
-pub async fn get_rpc_provider(config: &RpcProviderConfig) -> Result<NodeProvider> {
+pub async fn get_rpc_provider(config: &RpcProviderConfig) -> Result<PubSubNodeProvider> {
     let ws_connect = WsConnect::new(&config.node_url);
     let provider = ProviderBuilder::new().on_ws(ws_connect).await?;
 

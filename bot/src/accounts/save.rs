@@ -1,6 +1,6 @@
 use crate::{
     app::entities::AccountEntity,
-    shared::persistence::{get_placeholders_str, PostgresPool},
+    shared::persistence::{get_placeholders_str, DbPool},
 };
 use eyre::Result;
 use tracing::debug;
@@ -8,7 +8,7 @@ use tracing::debug;
 use super::{AccountCollateralDto, AccountDebtDto, AccountInsertDto};
 
 pub async fn save_accounts(
-    pool: &PostgresPool,
+    pool: &DbPool,
     accounts: Vec<AccountInsertDto>,
 ) -> Result<Vec<AccountEntity>> {
     debug!("Saving {} accounts", accounts.len());
@@ -36,7 +36,7 @@ pub async fn save_accounts(
 }
 
 pub async fn save_collaterals(
-    pool: &PostgresPool,
+    pool: &DbPool,
     collaterals: Vec<AccountCollateralDto>,
 ) -> Result<()> {
     let mut query_builder = r#"
@@ -67,7 +67,7 @@ pub async fn save_collaterals(
     Ok(())
 }
 
-pub async fn save_debts(pool: &PostgresPool, debts: Vec<AccountDebtDto>) -> Result<()> {
+pub async fn save_debts(pool: &DbPool, debts: Vec<AccountDebtDto>) -> Result<()> {
     let mut query_builder = r#"
         INSERT INTO operational.account_debts (
             account_id,

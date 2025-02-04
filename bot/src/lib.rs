@@ -7,10 +7,10 @@ pub mod clients;
 pub mod configuration;
 pub mod contracts;
 pub mod errors;
-mod lib_tests;
+pub mod price_feed;
 pub mod setup;
 pub mod shared;
 pub mod tokens;
 pub mod utils;
 
-pub type NodeProvider = RootProvider<PubSubFrontend>;
+pub type PubSubNodeProvider = RootProvider<PubSubFrontend>;

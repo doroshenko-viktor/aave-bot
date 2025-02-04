@@ -1,10 +1,8 @@
-pub mod get;
-pub mod save;
-
 use std::str::FromStr;
 
 use alloy::rpc::types::Log;
 use eyre::{Error, OptionExt, Result};
+use serde::{Deserialize, Serialize};
 use sqlx::{query_as, types::BigDecimal};
 use tracing::debug;
 
@@ -20,10 +18,10 @@ use crate::{contracts::pool::Pool::LiquidationCall, shared::persistence::Address
  * receiveAToken True if the liquidators wants to receive the collateral aTokens, `false` if he wants
  * to receive the underlying collateral asset directly
  */
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct LiquidationEventDto {
-    pub block_number: i32,
-    pub log_id: i32,
+    pub block_number: u64,
+    pub log_number: u64,
     pub collateral_asset: Address,
     pub debt_asset: Address,
     pub user: Address,
@@ -40,8 +38,8 @@ impl TryFrom<&Log<LiquidationCall>> for LiquidationEventDto {
         Ok(LiquidationEventDto {
             block_number: value
                 .block_number
-                .ok_or_eyre("Event must have block number")? as i32,
-            log_id: value.log_index.ok_or_eyre("Event must have log id")? as i32,
+                .ok_or_eyre("Event must have block number")?,
+            log_number: value.log_index.ok_or_eyre("Event must have log id")?,
             collateral_asset: value.data().collateralAsset.to_vec(),
             debt_asset: value.data().debtAsset.to_vec(),
             user: value.data().user.to_vec(),

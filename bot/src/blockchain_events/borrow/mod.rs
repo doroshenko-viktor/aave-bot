@@ -1,10 +1,8 @@
-pub mod get;
-pub mod save;
 use std::str::FromStr;
-
-use crate::{contracts::pool::Pool::Borrow, shared::persistence::PostgresPool};
+use crate::contracts::pool::Pool::Borrow;
 use alloy::rpc::types::Log;
 use eyre::{eyre, Error, OptionExt, Result};
+use serde::{Deserialize, Serialize};
 use sqlx::types::BigDecimal;
 use tracing::{debug, error, info, warn};
 
@@ -19,15 +17,15 @@ use tracing::{debug, error, info, warn};
  * @param borrowRate The numeric rate at which the user has borrowed, expressed in ray
  * @param referralCode The referral code used
  */
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct BorrowEventDto {
-    pub block_number: i32,
-    pub log_id: i32,
+    pub block_number: u64,
+    pub log_number: u64,
     pub amount: BigDecimal,
     pub borrow_rate: BigDecimal,
-    pub interest_rate_mode: i32,
+    pub interest_rate_mode: u8,
     pub on_behalf_of: Vec<u8>,
-    pub referral_code: i32,
+    pub referral_code: u16,
     pub reserve: Vec<u8>,
     pub user: Vec<u8>,
 }
@@ -38,20 +36,20 @@ impl TryFrom<&Log<Borrow>> for BorrowEventDto {
     fn try_from(value: &Log<Borrow>) -> Result<Self, Error> {
         let block_number = value
             .block_number
-            .ok_or(eyre!("Log must contain block number"))? as i32;
+            .ok_or(eyre!("Log must contain block number"))?;
         let log_id = value
             .log_index
-            .ok_or_eyre("Event must have an event log id")? as i32;
+            .ok_or_eyre("Event must have an event log id")?;
         let amount = BigDecimal::from_str(&value.inner.amount.to_string())?;
         let borrow_rate = BigDecimal::from_str(&value.inner.borrowRate.to_string())?;
-        let interest_rate_mode = value.inner.interestRateMode as i32;
+        let interest_rate_mode = value.inner.interestRateMode;
         let on_behalf_of = value.inner.onBehalfOf.to_vec();
-        let referral_code = value.inner.referralCode as i32;
+        let referral_code = value.inner.referralCode;
         let reserve = value.inner.reserve.to_vec();
         let user = value.inner.user.to_vec();
         Ok(BorrowEventDto {
             block_number,
-            log_id,
+            log_number: log_id,
             amount,
             borrow_rate,
             interest_rate_mode,

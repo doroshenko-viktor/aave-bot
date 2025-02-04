@@ -3,7 +3,7 @@ use sqlx::{Pool, Postgres};
 pub const SCHEMA_BLOCKCHAIN: &str = "blockchain";
 pub const SCHEMA_CONFIG: &str = "config";
 
-pub type PostgresPool = Pool<Postgres>;
+pub type DbPool = Pool<Postgres>;
 pub type Address = Vec<u8>;
 
 pub fn get_placeholders_str(placeholders_amount: usize, rows_amount: usize) -> String {

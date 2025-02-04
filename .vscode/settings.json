@@ -6,6 +6,16 @@
             "driver": "PostgreSQL",
             "name": "aave",
             "connectString": "postgres://bot:password@localhost:5432/aave_bot"
+        },
+        {
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 5432,
+            "driver": "PostgreSQL",
+            "name": "aave_bot",
+            "database": "aave_bot",
+            "username": "bot",
+            "password": "password"
         }
     ]
 }

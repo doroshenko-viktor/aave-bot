@@ -12,7 +12,11 @@ use sqlx::{
 };
 use tracing::info;
 
-use crate::shared::persistence::{get_placeholders_str, PostgresPool};
+use crate::shared::persistence::{get_placeholders_str, DbPool};
+
+pub type BlockNumber = BigDecimal;
+pub type BlockDbId = i32;
+pub type BlockDatabaseIds = HashMap<BlockNumber, BlockDbId>;
 
 #[derive(Debug, Eq, sqlx::FromRow)]
 pub struct BlockDto {
@@ -88,30 +92,14 @@ impl TryFrom<&Block> for BlockDto {
 //     }
 // }
 
-pub type BlockNumber = BigDecimal;
-pub type BlockDbId = i32;
-pub type BlockDatabaseIds = HashMap<BlockNumber, BlockDbId>;
-
 #[derive(Debug, sqlx::FromRow)]
 struct BlockInsertResult {
     db_id: BlockDbId,
     block_number: BigDecimal,
 }
 
-#[async_trait]
-pub trait BlocksPersistence {
-    async fn save_blocks(&self, blocks: Vec<BlockDto>) -> Result<BlockDatabaseIds, Error>;
-}
-
-#[async_trait]
-impl BlocksPersistence for Pool<Postgres> {
-    async fn save_blocks(&self, blocks: Vec<BlockDto>) -> Result<BlockDatabaseIds, Error> {
-        return save_blocks(self, blocks).await;
-    }
-}
-
 pub async fn save_blocks(
-    pool: &PostgresPool,
+    pool: &DbPool,
     blocks: Vec<BlockDto>,
 ) -> Result<BlockDatabaseIds, Error> {
     info!("Saving blocks into database");

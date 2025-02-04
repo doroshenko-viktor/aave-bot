@@ -1,0 +1,1 @@
+pub type ReserveAsset = Vec<u8>;

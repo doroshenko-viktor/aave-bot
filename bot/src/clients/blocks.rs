@@ -4,7 +4,15 @@ use alloy::{
     pubsub::PubSubFrontend,
     rpc::types::{Block, BlockTransactionsKind},
 };
+use eyre::Result;
 use futures::future::join_all;
+
+use crate::PubSubNodeProvider;
+
+pub async fn get_current_block(provider: &PubSubNodeProvider) -> Result<u64> {
+    let x = provider.get_block_number().await?;
+    Ok(x)
+}
 
 pub async fn get_blocks(
     provider: &RootProvider<PubSubFrontend>,
