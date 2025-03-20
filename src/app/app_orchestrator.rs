@@ -1,0 +1,46 @@
+use crate::{
+    accounts::user_account_store::data_store::UserAccountStore,
+    blockchain_events::events::BlockchainEvent, price_feed::entities::TickerId,
+    tokens::entities::Token,
+};
+use eyre::Result;
+use tokio::sync::mpsc::Receiver;
+use tracing::debug;
+
+/**
+Handle asset price changes invoking liquidation if price change will affect some account becomes unhealthy
+ */
+pub async fn start_handling_price_changes(
+    user_data_store: UserAccountStore,
+    mut changed_price_token_rx: Receiver<&'static Token>,
+) -> Result<()> {
+    tokio::spawn(async move {
+        while let Some(token) = changed_price_token_rx.recv().await {
+            let accounts_to_liquidate = user_data_store
+                .get_accounts_to_liquidate_on_price_change(token)
+                .await;
+            // TODO: call liquidation functionality
+        }
+    });
+
+    Ok(())
+}
+
+/**
+Handle blockchain events from AAVE maintaining account balances.
+*/
+pub async fn start_handling_account_state_changes(
+    user_data_store: UserAccountStore,
+    mut blockchain_events_rx: Receiver<BlockchainEvent>,
+) -> Result<()> {
+    {
+        tokio::spawn(async move {
+            while let Some(event) = blockchain_events_rx.recv().await {
+                let user_data = user_data_store.handle_event(event).await;
+            }
+            // TODO: handle exit from stream - probably panic
+        });
+    }
+
+    Ok(())
+}

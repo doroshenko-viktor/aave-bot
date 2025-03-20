@@ -2,24 +2,23 @@ CREATE SCHEMA if NOT EXISTS operational;
 
 CREATE TABLE IF NOT EXISTS operational.accounts (
     id serial PRIMARY KEY,
-    address bytea NOT NULL,
-    UNIQUE (address)
+    address varchar(42) NOT NULL UNIQUE
 );
 
 CREATE TABLE operational.account_collaterals (
     id serial PRIMARY KEY,
-    account_id INTEGER,
-    asset_id INTEGER,
-    amount NUMERIC(78, 18),
-    FOREIGN key (account_id) REFERENCES operational.accounts (id),
-    UNIQUE (account_id, asset_id)
+    account_address varchar(42) NOT NULL,
+    token_symbol varchar(6) NOT NULL,
+    amount numeric(78, 18) NOT NULL,
+    FOREIGN key (account_address) REFERENCES operational.accounts (address),
+    UNIQUE (account_address, token_symbol)
 );
 
 CREATE TABLE operational.account_debts (
     id serial PRIMARY KEY,
-    account_id INTEGER,
-    asset_id INTEGER,
-    amount NUMERIC(78, 18),
-    FOREIGN key (account_id) REFERENCES operational.accounts (id),
-    UNIQUE (account_id, asset_id)
+    account_address varchar(42) NOT NULL,
+    token_symbol varchar(6) NOT NULL,
+    amount numeric(78, 18) NOT NULL,
+    FOREIGN key (account_address) REFERENCES operational.accounts (address),
+    UNIQUE (account_address, token_symbol)
 );
