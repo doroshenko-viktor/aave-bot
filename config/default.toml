@@ -1,7 +1,12 @@
-[config]
-first_block = 1
+[app]
 # first_block = 16496817
 indexing_step = 10000
+
+[app.price_feed]
+bybit_spot_url = "wss://stream-testnet.bybit.com/v5/public/spot"
+
+[app.accounts]
+low_health_factor_threshold = 1.2
 
 [postgres]
 max_connections = 10
@@ -9,6 +14,3 @@ url = "postgres://bot:password@localhost:5432/aave_bot"
 
 [rpc_config]
 node_url = "wss://mainnet.infura.io/ws/v3/YOUR_INFURA_KEY"
-
-[bybit]
-bybit_spot_url = "wss://stream-testnet.bybit.com/v5/public/spot"

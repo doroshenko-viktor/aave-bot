@@ -1,6 +1,9 @@
-use crate::contracts::pool::Pool::Borrow;
-use alloy::{primitives::Address, rpc::types::Log};
-use eyre::{Error, OptionExt, Result, eyre};
+use crate::{accounts::types::AssetAmount, contracts::pool::Pool::Borrow};
+use alloy::{
+    primitives::{Address, Uint},
+    rpc::types::Log,
+};
+use eyre::{Error, Result};
 use serde::{Deserialize, Serialize};
 use sqlx::types::BigDecimal;
 use std::str::FromStr;
@@ -18,8 +21,8 @@ use std::str::FromStr;
  */
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct BorrowEventDto {
-    pub amount: BigDecimal,
-    pub borrow_rate: BigDecimal,
+    pub amount: AssetAmount,
+    pub borrow_rate: Uint<256, 4>,
     pub interest_rate_mode: u8,
     pub on_behalf_of: Address,
     pub referral_code: u16,
@@ -31,8 +34,8 @@ impl TryFrom<&Log<Borrow>> for BorrowEventDto {
     type Error = Error;
 
     fn try_from(value: &Log<Borrow>) -> Result<Self, Error> {
-        let amount = BigDecimal::from_str(&value.inner.amount.to_string())?;
-        let borrow_rate = BigDecimal::from_str(&value.inner.borrowRate.to_string())?;
+        let amount = value.inner.amount;
+        let borrow_rate = value.inner.borrowRate;
         let interest_rate_mode = value.inner.interestRateMode;
         let on_behalf_of = value.inner.onBehalfOf;
         let referral_code = value.inner.referralCode;

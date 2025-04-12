@@ -1,7 +1,4 @@
-use aave_bot::setup;
 use eyre::Result;
-use serde_json::Value;
-use tracing::{debug, error, info, warn};
 
 #[tokio::main]
 pub async fn main() -> Result<()> {

@@ -1,14 +1,12 @@
 use alloy::{primitives::Address, rpc::types::Log};
-use eyre::{Error, OptionExt, Result, eyre};
+use eyre::{Error, Result};
 use serde::{Deserialize, Serialize};
 use sqlx::types::BigDecimal;
 use std::str::FromStr;
-use tracing::debug;
 
 use crate::{
-    contracts::pool::Pool::Withdraw,
-    shared::persistence::{AccountAddress, AccountAddressBin},
-    tokens::TokenAddress,
+    accounts::types::AssetAmount, contracts::pool::Pool::Withdraw,
+    shared::persistence::AccountAddress, tokens::TokenAddress,
 };
 
 /**
@@ -23,7 +21,7 @@ pub struct WithdrawEventDto {
     pub reserve: TokenAddress,
     pub user: AccountAddress,
     pub to: AccountAddress,
-    pub amount: BigDecimal,
+    pub amount: AssetAmount,
 }
 
 impl TryFrom<&Log<Withdraw>> for WithdrawEventDto {
@@ -34,14 +32,8 @@ impl TryFrom<&Log<Withdraw>> for WithdrawEventDto {
         let reserve = value.inner.reserve;
         let user = value.inner.user;
         let to = value.inner.to;
-        let amount = BigDecimal::from_str(&value.inner.amount.to_string())?;
+        let amount = value.inner.amount;
 
-        Ok(WithdrawEventDto {
-            address,
-            reserve,
-            user,
-            to,
-            amount,
-        })
+        Ok(WithdrawEventDto { address, reserve, user, to, amount })
     }
 }

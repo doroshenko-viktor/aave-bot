@@ -2,13 +2,10 @@ use std::str::FromStr;
 
 use alloy::{primitives::Address, rpc::types::Log};
 use bigdecimal::BigDecimal;
-use eyre::{Error, OptionExt};
+use eyre::Error;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    contracts::pool::Pool::Supply,
-    shared::persistence::{AccountAddress, AccountAddressBin},
-};
+use crate::{accounts::types::AssetAmount, contracts::pool::Pool::Supply};
 
 /**
  * @dev Emitted on supply()
@@ -23,7 +20,7 @@ pub struct SupplyEventDto {
     pub reserve: Address,
     pub user: Address,
     pub on_behalf_of: Address,
-    pub amount: BigDecimal,
+    pub amount: AssetAmount,
     pub referral_code: u16,
 }
 
@@ -40,8 +37,9 @@ impl TryFrom<&Log<Supply>> for SupplyEventDto {
         let reserve = value.inner.reserve;
         let user = value.inner.user;
         let on_behalf_of = value.inner.onBehalfOf;
-        let amount = BigDecimal::from_str(&value.inner.amount.to_string())?;
+        let amount = value.inner.amount;
         let referral_code = value.inner.referralCode;
+
         Ok(SupplyEventDto {
             amount,
             on_behalf_of,

@@ -1,4 +1,3 @@
-use alloy::rpc::types::Log;
 use bigdecimal::BigDecimal;
 use eyre::{eyre, Error};
 use std::str::FromStr;

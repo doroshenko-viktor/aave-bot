@@ -1,8 +1,4 @@
-use crate::{shared::persistence::DbPool, tokens::TokenSymbol};
-use eyre::Result;
-use sqlx;
 
-use super::globals::get_db_pool;
 
 //TODO: check if I need it
 // pub async fn get_tokens_to_track() -> Result<Vec<TokenSymbol>> {

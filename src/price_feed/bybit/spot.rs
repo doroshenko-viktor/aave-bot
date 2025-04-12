@@ -4,22 +4,33 @@ use serde_json::Value;
 use std::str::FromStr;
 use tracing::{debug, error, info};
 
-use crate::price_feed::{ChangedTokenPriceTX, prices_aggregator, ticker_service};
+use crate::price_feed::{
+    ChangedTokenPriceTX, prices_aggregator, ticker_service,
+};
 
 use super::BybitEventRX;
 
-pub fn listen(mut bybit_rx: BybitEventRX, changed_token_price_tx: ChangedTokenPriceTX) {
+pub fn listen(
+    mut bybit_rx: BybitEventRX,
+    changed_token_price_tx: ChangedTokenPriceTX,
+) {
     tokio::spawn(async move {
         info!("Listening for bybit responses");
         while let Some(response) = bybit_rx.recv().await {
             match response {
-                Ok(message) => match serde_json::from_slice::<Value>(message.as_bytes()) {
-                    Ok(value) => {
-                        handle_topic(value, changed_token_price_tx.clone()).await;
+                Ok(message) => {
+                    match serde_json::from_slice::<Value>(message.as_bytes()) {
+                        Ok(value) => {
+                            handle_topic(value, changed_token_price_tx.clone())
+                                .await;
+                        }
+                        Err(_) => todo!(),
                     }
-                    Err(_) => todo!(),
-                },
-                Err(e) => error!("Error from bybit ws client stream: {}", e),
+                }
+                Err(e) => error!(
+                    "Error from bybit ws client stream: {}",
+                    e
+                ),
             }
         }
     });
@@ -41,7 +52,10 @@ pub fn listen(mut bybit_rx: BybitEventRX, changed_token_price_tx: ChangedTokenPr
 //     }
 //     None
 // }
-async fn handle_topic(value: Value, changed_token_price_tx: ChangedTokenPriceTX) {
+async fn handle_topic(
+    value: Value,
+    changed_token_price_tx: ChangedTokenPriceTX,
+) {
     match value.get("topic") {
         Some(serde_json::Value::String(topic)) => {
             if topic.len() > 8 && &topic[..7] == "tickers" {
@@ -61,8 +75,9 @@ async fn handle_ticker_feed<'a>(
     let (last_traded_price, usd_price) = value
         .get("data")
         .map(|data| {
-            let usd_index_price: Result<BigDecimal> = get_value(&data, "usdIndexPrice");
-            let last_price: Result<BigDecimal> = get_value(&data, "lastPrice");
+            let usd_index_price: Result<f64> =
+                get_value(&data, "usdIndexPrice");
+            let last_price: Result<f64> = get_value(&data, "lastPrice");
             (usd_index_price, last_price)
         })
         .ok_or_eyre("No 'data' object found in ticker stream object")?;
@@ -71,14 +86,15 @@ async fn handle_ticker_feed<'a>(
 
     #[cfg(debug_assertions)]
     {
-        let (_, ticker_data) = ticker_service::get_ticker_from_bybit_str(&topic[8..]);
+        let (_, ticker_data) =
+            ticker_service::get_ticker_from_bybit_str(&topic[8..]);
         debug!(
             "TICKER: {}; LAST PRICE: {}; USD PRICE: {}",
             ticker_data.bybit_repr, last_traded_price, usd_price
         );
     }
 
-    prices_aggregator::set(token, last_traded_price);
+    prices_aggregator::set_usd_price(token.get_id(), last_traded_price);
 
     changed_token_price_tx.send(token).await;
 
@@ -91,10 +107,10 @@ where
     <T as FromStr>::Err: std::error::Error + Send + Sync + 'static,
 {
     Ok(
-        match value
-            .get(name)
-            .ok_or_eyre(format!("Price feed should contain {}", name))?
-        {
+        match value.get(name).ok_or_eyre(format!(
+            "Price feed should contain {}",
+            name
+        ))? {
             Value::String(extracted) => extracted.parse::<T>()?,
             _ => Err(eyre!("Value is not in string format"))?,
         },

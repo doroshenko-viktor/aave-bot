@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use eyre::{OptionExt, Result, eyre};
+use eyre::{Result, eyre};
 use sqlx::{query, query_scalar};
 use std::{
     fmt::Display,

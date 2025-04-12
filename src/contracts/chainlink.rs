@@ -1,5 +1,5 @@
 use Chainlink::ChainlinkInstance;
-use alloy::{pubsub::PubSubFrontend, sol};
+use alloy::sol;
 
 use crate::NodeWsProvider;
 

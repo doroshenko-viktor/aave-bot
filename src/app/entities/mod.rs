@@ -1,7 +1,6 @@
 use alloy::primitives::Address;
 use bigdecimal::BigDecimal;
 
-use crate::shared::persistence::AccountAddress;
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct AccountEntity {

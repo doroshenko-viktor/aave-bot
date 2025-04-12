@@ -8,14 +8,14 @@ pub async fn save_events(pool: &DbPool, events: Vec<BlockchainEventPersistenceDt
     debug!("Inserting {} events to db", events.len());
     let mut query_builder = r#"INSERT INTO blockchain.events (
                 block_number,
-                log_id,
+                log_number,
                 event_type_id,
                 body
             ) VALUES"#
         .to_string();
     let placeholders = get_placeholders_str(4, events.len());
     query_builder.push_str(&placeholders);
-    query_builder.push_str(r#" ON CONFLICT (block_number, log_id) DO NOTHING"#);
+    query_builder.push_str(r#" ON CONFLICT (block_number, log_number) DO NOTHING"#);
 
     let query = events
         .into_iter()
@@ -28,7 +28,7 @@ pub async fn save_events(pool: &DbPool, events: Vec<BlockchainEventPersistenceDt
         });
 
     let res = query.execute(pool).await?;
-    debug!("Insert liquidation events into db result: {:#?}", res);
+    debug!("Inserted events into db result: {:#?}", res);
 
     Ok(())
 }

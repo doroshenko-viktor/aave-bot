@@ -1,26 +1,24 @@
 use dashmap::DashMap;
 use std::sync::LazyLock;
 
-use crate::{
-    price_feed::entities::{TickerId, TokenUsdPrice},
-    tokens::{TokenAddress, entities::Token},
-};
+use crate::{price_feed::entities::TokenPrice, tokens::types::TokenId};
 
 /*
 Contains last received prices of all relevant assets to `USD`.
 This is a thread safe struct and may be safely cloned between threads.
 */
-static USD_PRICES: LazyLock<DashMap<&Token, TokenUsdPrice>> = LazyLock::new(|| DashMap::default());
+static USD_PRICES: LazyLock<DashMap<TokenId, TokenPrice>> =
+    LazyLock::new(|| DashMap::default());
 
-pub async fn get(ticker: &Token) -> Option<TokenUsdPrice> {
-    USD_PRICES.get(ticker).map(|val| val.clone())
+pub fn get_usd_price(token_id: TokenId) -> Option<TokenPrice> {
+    USD_PRICES.get(&token_id).map(|val| *val)
 }
 
-pub fn set(ticker: &'static Token, price: TokenUsdPrice) {
-    if let Some(mut val) = USD_PRICES.get_mut(ticker) {
+pub fn set_usd_price(token_id: TokenId, price: TokenPrice) {
+    if let Some(mut val) = USD_PRICES.get_mut(&token_id) {
         *val = price;
     } else {
-        USD_PRICES.insert(ticker, price);
+        USD_PRICES.insert(token_id, price);
     }
 }
 

@@ -1,6 +1,6 @@
 use alloy::{rpc::types::Log, sol_types::SolEvent};
 
-use eyre::{Error, Result, eyre};
+use eyre::Error;
 
 use super::BlockchainEvent;
 

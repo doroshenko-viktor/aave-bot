@@ -13,8 +13,9 @@ async streams
 Repay event - first block 16497341
 16498089; // withdraw event block
 
-## TODO:
+## TODO
 
+- eliminate BigDecimal - use u64 and alloy int<256, 4> for performance
 - move lib types to shared
 - prices feed emits price events - consider mechanism to track event ids and skip handling of newer emmitted events for this thicker if generated more events than handled, e.g. keep track of ticker event ids in prices aggregator
 - refactor contracts folder

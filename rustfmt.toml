@@ -1,0 +1,54 @@
+edition = "2024"
+
+# Basic formatting style
+hard_tabs = false # Only relevant if indent_style = "tab"
+indent_style = "Visual" # or "tab"
+newline_style = "Auto" # "Unix", "Windows", "Native"
+tab_width = 4 
+
+# Maximum line length
+max_width = 80
+
+# Brace style
+brace_style = "PreferSameLine" # "AlwaysNextLine", "NeverSameLine"
+
+# Control where to put trailing commas
+trailing_comma = "Never" # "Always", "Vertical"
+
+# Control how to handle single-line statements in blocks
+single_line_block = false # true
+
+# Control how to handle imports
+group_imports = "StdExternalCrate" # "StdCrate", "ExternalCrate", "Module", "None"
+imports_granularity = "Crate" # "Module", "Preserve"
+
+# Control how to format strings
+format_strings = true
+
+# Control how to format comments
+format_comments = true
+
+# Control how to wrap function arguments
+fn_call_width = 40
+fn_def_width = 50
+
+# Control how to wrap struct literals
+struct_lit_width = 50
+
+# Control how to wrap enums
+enum_discrim_align = false
+
+# Control how to align match arms
+match_arm_leading_pipes = "Never" # "Always"
+match_arm_max_width = 80 
+
+# Control how to format where clauses
+where_clause_style = "Compact" # "Visual"
+
+# Control how to format macro invocations
+format_macros = true
+
+chain_style = "Visual"
+
+# Ignore certain files or directories (globs are supported)
+ignore = ["target/", "generated.rs"]

@@ -20,18 +20,18 @@ CREATE TABLE IF NOT EXISTS config.cache (
 
 CREATE TABLE IF NOT EXISTS blockchain.blocks (
     id serial PRIMARY KEY,
-    block_number numeric(78, 18) UNIQUE,
+    block_number bigint UNIQUE,
     block_hash bytea,
     block_timestamp timestamp
 );
 
 CREATE TABLE IF NOT EXISTS blockchain.events (
     id serial PRIMARY KEY,
-    block_number integer NOT NULL,
+    block_number bigint NOT NULL,
     log_number integer NOT NULL,
-    event_type_id int NOT NULL,
+    event_type_id smallint NOT NULL,
     body jsonb NOT NULL,
-    FOREIGN key (block_number) REFERENCES blockchain.blocks (id) ON DELETE cascade,
+    -- FOREIGN key (block_number) REFERENCES blockchain.blocks (id) ON DELETE cascade,
     UNIQUE (block_number, log_number)
 );
 

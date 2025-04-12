@@ -1,5 +1,4 @@
 use alloy::primitives::Address;
-use bigdecimal::BigDecimal;
 use dashmap::DashMap;
 use eyre::Result;
 use futures::{StreamExt, future::join_all};
@@ -8,11 +7,9 @@ use tokio::sync::RwLock;
 use tracing::{debug, error};
 
 use crate::{
-    accounts::{
-        entities::{UserAccount, UserAccountRef},
-        health_factor::calculate_health_factor,
-    },
-    tokens::entities::Token,
+    accounts::entities::{UserAccount, UserAccountRef},
+    tokens::types::TokenId,
+    utils::result_utils::CollectionResult,
 };
 use crate::{
     blockchain_events::events::{BlockchainEvent, BlockchainEventBody},
@@ -28,20 +25,32 @@ pub struct Meta {
 #[derive(Debug, Clone)]
 pub struct UserAccountStore {
     /* Map of user accounts by their address in blockchain */
-    pub(in crate::accounts) accounts: Arc<DashMap<AccountAddress, UserAccountRef>>,
+    pub(in crate::accounts) accounts:
+        Arc<DashMap<AccountAddress, UserAccountRef>>,
     /* Contains references to account by their assets(collaterals or debts) */
-    low_hf_accounts: Arc<RwLock<HashMap<&'static Token, Vec<UserAccountRef>>>>,
+    // TODO: rewrite it to contain only account addresses of low hf accounts and then get them by address and get rid of arc on user account
+    // TODO: I also don't need RwLock on hashmap, because I will not change it
+    // ✅ 4. Use SlotMap or IndexMap for stable indexing (if needed)
+    // If you're dealing with huge account sets and ever need stable, index-based traversal (like for efficient batch processing), using a SlotMap or IndexMap can improve memory locality and iteration performance.
+    //
+    // If you want all tasks (like your periodic loop or per-token handlers) to react to the latest price without polling, consider:
+    // let (tx, rx) = tokio::sync::watch::channel(initial_price);
+    // tx.send(new_price) pushes a new price.
+    // All rx handles instantly see .changed().await.
+    low_hf_accounts: Arc<RwLock<HashMap<TokenId, Vec<AccountAddress>>>>, // TODO: maybe use
+    // &[Option<Vec<AccountAddress>>; TOKENS_COUNT]
     pub(in crate::accounts) meta: Meta,
 }
 
 impl UserAccountStore {
-    pub fn new(accounts: Arc<DashMap<AccountAddress, UserAccountRef>>, last_block: u64) -> Self {
+    pub fn new(
+        accounts: Arc<DashMap<AccountAddress, UserAccountRef>>,
+        last_block: u64,
+    ) -> Self {
         Self {
             accounts,
             low_hf_accounts: Arc::new(RwLock::new(HashMap::new())),
-            meta: Meta {
-                last_block_number: last_block,
-            },
+            meta: Meta { last_block_number: last_block },
         }
     }
 
@@ -54,42 +63,53 @@ impl UserAccountStore {
     }
 
     pub async fn refresh_low_hf_accounts(&self) {
-        let low_hf_threshold = &get_global_settings().accounts.low_health_factor_threshold;
+        let low_hf_threshold = &get_global_settings()
+            .app
+            .accounts
+            .low_health_factor_threshold;
 
-        let low_hf_accounts_map = futures::stream::iter(self.accounts.iter().map(async |kvp| {
-            let x = match calculate_health_factor(kvp.value()).await {
-                Ok(hf) if &hf < low_hf_threshold => Some(kvp),
-                Err(err) => {
-                    error!("Error during refresh low hf accounts: {}", err);
-                    None
+        let low_hf_accounts_map =
+            futures::stream::iter(self.accounts.iter().map(async |kvp| {
+                let health_factor =
+                    kvp.value().read().await.calculate_health_factor().await;
+                match health_factor {
+                    Ok(hf) if &hf < low_hf_threshold => Some(kvp),
+                    Err(err) => {
+                        error!(
+                            "Error during refresh low hf accounts: {}",
+                            err
+                        );
+                        None
+                    }
+                    _ => None,
                 }
-                _ => None,
-            };
-            x
-        }))
-        .buffer_unordered(8)
-        .filter_map(async |x| match x {
-            Some(val) => {
-                let account = val.value();
-                Some((account.clone(), account.read().await.get_related_tokens()))
-            }
-            None => None,
-        })
-        .fold(
-            HashMap::<&Token, Vec<UserAccountRef>>::new(),
-            async |mut result, (account, tokens)| {
-                for token in tokens {
+            }))
+            .buffer_unordered(8)
+            .filter_map(async |x| match x {
+                Some(val) => {
+                    let account = val.value().read().await;
+                    Some((
+                        account.address,
+                        account.get_related_tokens(),
+                    ))
+                }
+                None => None,
+            })
+            .fold(
+                HashMap::<TokenId, Vec<Address>>::new(),
+                async |mut result, (account_address, tokens_ids)| {
+                    for token_id in tokens_ids {
+                        result
+                            .entry(token_id)
+                            .and_modify(|val| {
+                                val.push(account_address);
+                            })
+                            .or_insert_with(|| vec![account_address.clone()]);
+                    }
                     result
-                        .entry(token)
-                        .and_modify(|val| {
-                            val.push(account.clone());
-                        })
-                        .or_insert_with(|| vec![account.clone()]);
-                }
-                result
-            },
-        )
-        .await;
+                },
+            )
+            .await;
 
         // TODO: check performance of these implementations
         // let low_hf_accounts = join_all(self.accounts.iter().map(|kvp| async move {
@@ -135,45 +155,66 @@ impl UserAccountStore {
 
     pub async fn get_accounts_to_liquidate_on_price_change(
         &self,
-        token: &'static Token,
+        token: TokenId,
     ) -> Vec<UserAccountRef> {
         let low_hf_accounts = self.low_hf_accounts.read().await;
 
-        if let Some(accounts) = low_hf_accounts.get(&token) {
+        if let Some(account_addresses) = low_hf_accounts.get(&token) {
+            let accounts = account_addresses.iter().map(|address| {
+                self.accounts
+                    .get(address)
+                    .expect("Expected to find account in store")
+                    .clone()
+            });
             get_accounts_to_liquidate(accounts).await
         } else {
             vec![]
         }
     }
 
-    pub async fn handle_event(&self, event: BlockchainEvent) -> Result<UserAccountRef> {
+    pub async fn handle_event(
+        &self,
+        event: BlockchainEvent,
+    ) -> Result<UserAccountRef> {
         let user_account = match event.body {
             BlockchainEventBody::Supply(event_body) => {
-                debug!(
-                    "\tHandling supply for user: {:#x} on behalf of: {:#x}",
-                    event_body.on_behalf_of, event_body.user
-                );
-                let user_data = self.get_user_account(&event_body.on_behalf_of).await;
-                user_data.write().await.handle_supply(event_body);
-                user_data
+                // debug!(
+                //     "\tHandling supply for user: {:#x} on behalf of: {:#x}",
+                //     event_body.on_behalf_of, event_body.user
+                // );
+                let user_account =
+                    self.get_user_account(&event_body.on_behalf_of).await;
+                {
+                    let mut account_ref = user_account.write().await;
+                    account_ref.handle_supply(event_body);
+                }
+
+                user_account
             }
             BlockchainEventBody::Borrow(event_body) => {
                 debug!(
                     "Handling borrow for user: {:#x}; on behalf of: {:#x}",
                     event_body.user, event_body.on_behalf_of
                 );
-                let user_data = self.get_user_account(&event_body.on_behalf_of).await;
+                let user_data =
+                    self.get_user_account(&event_body.on_behalf_of).await;
                 user_data.write().await.handle_borrow(event_body);
                 user_data
             }
             BlockchainEventBody::Repay(event_body) => {
-                debug!("Handling REPAY for user: {:#x}", event_body.user);
+                debug!(
+                    "Handling REPAY for user: {:#x}",
+                    event_body.user
+                );
                 let user_data = self.get_user_account(&event_body.user).await;
                 user_data.write().await.handle_repay(event_body)?;
                 user_data
             }
             BlockchainEventBody::Withdraw(event_body) => {
-                debug!("Handling WITHDRAW for user: {:#x}", event_body.user);
+                debug!(
+                    "Handling WITHDRAW for user: {:#x}",
+                    event_body.user
+                );
                 let user_data = self.get_user_account(&event_body.user).await;
                 let res = user_data.write().await.handle_withdraw(event_body);
                 // TODO: consider separate Error type to take action when handling of event is not successful
@@ -181,13 +222,19 @@ impl UserAccountStore {
                 #[cfg(debug_assertions)]
                 {
                     if let Err(err) = res {
-                        error!("Error happened during handling withdraw event: {}", err);
+                        error!(
+                            "Error happened during handling withdraw event: {}",
+                            err
+                        );
                     }
                 }
                 user_data
             }
             BlockchainEventBody::Liquidation(event_body) => {
-                debug!("Handling LIQUIDATION for user: {:#x}", event_body.user);
+                debug!(
+                    "Handling LIQUIDATION for user: {:#x}",
+                    event_body.user
+                );
                 let user_data = self.get_user_account(&event_body.user).await;
                 user_data.write().await.handle_liquidation(event_body)?;
                 user_data
@@ -221,21 +268,30 @@ impl UserAccountStore {
         Ok(user_account)
     }
 
-    async fn get_user_account(&self, account_address: &Address) -> UserAccountRef {
-        if let Some(user_data) = self.accounts.get(account_address) {
-            user_data.clone()
+    async fn get_user_account(
+        &self,
+        account_address: &Address,
+    ) -> UserAccountRef {
+        if let Some(account_ref) = self.accounts.get(account_address) {
+            account_ref.clone()
         } else {
             let user_account = Arc::new(RwLock::new(UserAccount::default()));
-            self.accounts
-                .insert(account_address.clone(), user_account.clone());
+            self.accounts.insert(
+                account_address.clone(),
+                user_account.clone(),
+            );
             user_account
         }
     }
 }
 
-async fn get_accounts_to_liquidate(accounts: &Vec<UserAccountRef>) -> Vec<UserAccountRef> {
-    let (accounts_with_hf, errors) = join_all(accounts.iter().map(|account| async move {
-        match calculate_health_factor(&account).await {
+async fn get_accounts_to_liquidate(
+    accounts: impl Iterator<Item = UserAccountRef>,
+) -> Vec<UserAccountRef> {
+    let accounts_with_hf = join_all(accounts.map(|account| async move {
+        let health_factor =
+            account.read().await.calculate_health_factor().await;
+        match health_factor {
             Ok(hf) => Ok((account, hf)),
             Err(e) => Err(e),
         }
@@ -243,22 +299,28 @@ async fn get_accounts_to_liquidate(accounts: &Vec<UserAccountRef>) -> Vec<UserAc
     .await
     .into_iter()
     .fold(
-        (Vec::with_capacity(accounts.len()), Vec::new()),
+        CollectionResult::<(UserAccountRef, f32)>::new(),
         |mut acc, cur| {
             match cur {
-                Ok(x) => acc.0.push(x),
-                Err(e) => acc.1.push(e),
+                Ok(x) => acc.result.push(x),
+                Err(e) => acc.errors.push(e),
             }
             acc
         },
     );
-    for err in errors {
-        error!("{}", err)
+
+    for err in accounts_with_hf.errors {
+        error!(
+            "Error calculating low hf accounts: {}",
+            err
+        )
     }
+
     accounts_with_hf
+        .result
         .into_iter()
         .filter_map(|(account, hf)| {
-            if hf > BigDecimal::from(1_i32) {
+            if hf > 1_f32 {
                 None
             } else {
                 Some(account.clone())

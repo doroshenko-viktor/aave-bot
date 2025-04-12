@@ -1,6 +1,9 @@
 use alloy::providers::{
     Identity, RootProvider,
-    fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
+    fillers::{
+        BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill,
+        NonceFiller,
+    },
 };
 pub mod accounts;
 pub mod app;
@@ -19,7 +22,10 @@ pub mod utils;
 pub type NodeWsProvider = FillProvider<
     JoinFill<
         Identity,
-        JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+        JoinFill<
+            GasFiller,
+            JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>,
+        >,
     >,
     RootProvider,
 >;

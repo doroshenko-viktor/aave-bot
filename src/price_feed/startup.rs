@@ -1,10 +1,9 @@
 use crate::tokens::entities::Token;
 
 use super::{PriceFeedConfig, bybit};
-use super::{entities::TickerId, price_feeds_service::PriceFeedsService};
+use super::price_feeds_service::PriceFeedsService;
 use eyre::Result;
 use tokio::sync::mpsc::Receiver;
-use tracing::{error, info, warn};
 
 pub async fn start_price_feed_consumption(
     config: &PriceFeedConfig,

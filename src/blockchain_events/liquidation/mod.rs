@@ -1,14 +1,13 @@
 use std::str::FromStr;
 
-use alloy::{primitives::Address, rpc::types::Log};
-use eyre::{Error, OptionExt, Result};
+use alloy::rpc::types::Log;
+use eyre::{Error, Result};
 use serde::{Deserialize, Serialize};
-use sqlx::{query_as, types::BigDecimal};
-use tracing::debug;
+use sqlx::types::BigDecimal;
 
 use crate::{
-    contracts::pool::Pool::LiquidationCall, shared::persistence::AccountAddress,
-    tokens::TokenAddress,
+    accounts::types::AssetAmount, contracts::pool::Pool::LiquidationCall,
+    shared::persistence::AccountAddress, tokens::TokenAddress,
 };
 
 /**
@@ -26,8 +25,8 @@ pub struct LiquidationEventDto {
     pub collateral_asset: TokenAddress,
     pub debt_asset: TokenAddress,
     pub user: AccountAddress,
-    pub debt_to_cover: BigDecimal,
-    pub liquidated_collateral_amount: BigDecimal,
+    pub debt_to_cover: AssetAmount,
+    pub liquidated_collateral_amount: AssetAmount,
     pub liquidator: AccountAddress,
     pub receive_a_token: bool,
 }
@@ -40,10 +39,10 @@ impl TryFrom<&Log<LiquidationCall>> for LiquidationEventDto {
             collateral_asset: value.data().collateralAsset,
             debt_asset: value.data().debtAsset,
             user: value.data().user,
-            debt_to_cover: BigDecimal::from_str(&value.data().debtToCover.to_string())?,
-            liquidated_collateral_amount: BigDecimal::from_str(
-                &value.data().liquidatedCollateralAmount.to_string(),
-            )?,
+            debt_to_cover: value.data().debtToCover,
+            liquidated_collateral_amount: value
+                .data()
+                .liquidatedCollateralAmount,
             liquidator: value.data().liquidator,
             receive_a_token: value.data().receiveAToken,
         })

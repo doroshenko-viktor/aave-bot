@@ -3,6 +3,7 @@ pub mod blockchain_client;
 pub mod entities;
 mod persistence;
 pub mod token_service;
+pub mod types;
 
 use alloy::{primitives::Address, sol};
 use bigdecimal::BigDecimal;

@@ -14,10 +14,14 @@ use governor::{
     state::{InMemoryState, NotKeyed},
 };
 
-use crate::accounts;
+use crate::app::config::AppConfig;
 
-pub type RpcRateLimiter =
-    RateLimiter<NotKeyed, InMemoryState, QuantaClock, NoOpMiddleware<QuantaInstant>>;
+pub type RpcRateLimiter = RateLimiter<
+    NotKeyed,
+    InMemoryState,
+    QuantaClock,
+    NoOpMiddleware<QuantaInstant>,
+>;
 
 pub enum AppMode {
     Development,
@@ -35,7 +39,10 @@ impl TryFrom<&str> for AppMode {
             "prod" => Ok(Self::Production),
             "stage" => Ok(Self::Staging),
             "test" => Ok(Self::Test),
-            _ => Err(eyre!("Couldn't parse APP_MODE from given value: {}", value)),
+            _ => Err(eyre!(
+                "Couldn't parse APP_MODE from given value: {}",
+                value
+            )),
         }
     }
 }
@@ -52,12 +59,6 @@ impl ToString for AppMode {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct AppConfig {
-    pub first_block: u64,
-    pub indexing_step: u64,
-}
-
-#[derive(Debug, Deserialize, Clone)]
 pub struct PostgresConfig {
     pub url: String,
     pub max_connections: u32,
@@ -70,13 +71,12 @@ pub struct RpcProviderConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
-    pub config: AppConfig,
+    pub app: AppConfig,
     pub rpc_config: RpcProviderConfig,
     pub postgres: PostgresConfig,
-    pub accounts: accounts::config::Config,
 }
 
-const CONFIG_FOLDER_PATH: &str = "bot/config/";
+const CONFIG_FOLDER_PATH: &str = "./config/";
 const DEFAULT_CONFIG_FILE_NAME: &str = "default";
 
 impl Settings {
@@ -84,13 +84,24 @@ impl Settings {
         let config_builder = Config::builder()
             .add_source(
                 File::with_name(
-                    format!("{}{}", CONFIG_FOLDER_PATH, DEFAULT_CONFIG_FILE_NAME).as_ref(),
+                    format!(
+                        "{}{}",
+                        CONFIG_FOLDER_PATH, DEFAULT_CONFIG_FILE_NAME
+                    )
+                    .as_ref(),
                 )
                 .required(true),
             )
             .add_source(
-                File::with_name(format!("{}{}", CONFIG_FOLDER_PATH, run_mod.to_string()).as_ref())
-                    .required(false),
+                File::with_name(
+                    format!(
+                        "{}{}",
+                        CONFIG_FOLDER_PATH,
+                        run_mod.to_string()
+                    )
+                    .as_ref(),
+                )
+                .required(false),
             )
             .add_source(Environment::with_prefix("app").separator("__"))
             .build()?;

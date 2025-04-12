@@ -7,7 +7,7 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
     tungstenite::{Message, Utf8Bytes},
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 use crate::price_feed::{ChangedTokenPriceTX, bybit::spot, entities::TickerSymbol};
 
@@ -63,7 +63,7 @@ pub async fn run_bybit_ws_channel<T: BybitClientType>(
     let (ws_stream, _) = tokio_tungstenite::connect_async(&url).await?;
     let (write, mut read) = ws_stream.split();
     let write = Arc::new(Mutex::new(write));
-    let (result_tx, mut result_rx) = tokio::sync::mpsc::channel::<Result<Utf8Bytes>>(100);
+    let (result_tx, result_rx) = tokio::sync::mpsc::channel::<Result<Utf8Bytes>>(100);
     debug!("Starting to listen new stream");
 
     {

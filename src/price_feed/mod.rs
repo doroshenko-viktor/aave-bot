@@ -10,8 +10,9 @@ mod startup;
 pub mod ticker_service;
 
 pub use config::PriceFeedConfig;
-use entities::TickerId;
-pub use price_feeds_service::PriceFeedsService;
+pub use price_feeds_service::{
+    PriceFeedsService, start_configured_price_feeds,
+};
 pub use startup::start_price_feed_consumption;
 use tokio::sync::mpsc::Sender;
 

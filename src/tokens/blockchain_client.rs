@@ -1,8 +1,8 @@
 use super::ERC20TokenDto;
+use crate::utils::uint_ext::UintExt;
 use crate::{NodeWsProvider, configuration::RpcRateLimiter, tokens::IERC20};
-use bigdecimal::BigDecimal;
 use eyre::Result;
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 use tracing::debug;
 
 pub async fn get_token_details(
@@ -20,15 +20,13 @@ pub async fn get_token_details(
     rpc_rate_limiter.until_ready().await;
     let decimals = contract.decimals().call().await?;
     rpc_rate_limiter.until_ready().await;
-    let total_supply = contract.totalSupply().call().await?;
-
-    let total_supply = BigDecimal::from_str(&total_supply._0.to_string())?;
+    let total_supply = contract.totalSupply().call().await?.to_big_decimal()?;
 
     Ok(ERC20TokenDto {
         address,
-        name: Some(name._0),
-        symbol: symbol._0,
-        decimals: decimals._0 as i32,
+        name: Some(name),
+        symbol,
+        decimals: decimals as i32,
         total_supply,
     })
 }

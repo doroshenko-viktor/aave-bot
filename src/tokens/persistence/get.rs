@@ -1,10 +1,12 @@
 use crate::{
-    app::entities::ERC20TokenEntity, configuration::globals::get_db_pool, tokens::entities::Token,
+    app::entities::ERC20TokenEntity, configuration::globals::get_db_pool,
+    tokens::entities::Token,
 };
 use alloy::primitives::Address;
 use eyre::Result;
 
-pub async fn get_tokens() -> Result<impl Iterator<Item = (Token, ERC20TokenEntity)>> {
+pub async fn get_tokens()
+-> Result<impl Iterator<Item = (Token, ERC20TokenEntity)>> {
     let pool = get_db_pool();
     let tokens = sqlx::query!(
         r#"
@@ -25,7 +27,8 @@ pub async fn get_tokens() -> Result<impl Iterator<Item = (Token, ERC20TokenEntit
     .await?
     .into_iter()
     .map(|rec| {
-        let token = Token::new(rec.token_id as u8, rec.token_symbol);
+        let token_address = Address::from_slice(&rec.address);
+        let token = Token::new(rec.token_id as u8, rec.token_symbol, token_address, rec.decimals as u8);
         let erc_token = ERC20TokenEntity {
             address: Address::from_slice(&rec.address),
             decimals: rec.decimals,

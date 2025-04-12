@@ -1,11 +1,14 @@
 use std::str::FromStr;
 
-use crate::{contracts::pool::Pool::Repay, shared::persistence::AccountAddress, tokens::TokenAddress};
+use crate::{
+    accounts::types::AssetAmount, contracts::pool::Pool::Repay,
+    shared::persistence::AccountAddress, tokens::TokenAddress,
+};
 
-use alloy::{primitives::Address, rpc::types::Log};
+use alloy::rpc::types::Log;
 use eyre::{Error, OptionExt, Result};
 use serde::{Deserialize, Serialize};
-use sqlx::{query_as, types::BigDecimal};
+use sqlx::types::BigDecimal;
 
 /**
  * reserve The address of the underlying asset of the reserve
@@ -21,7 +24,7 @@ pub struct RepayEventDto {
     pub reserve: TokenAddress,
     pub user: AccountAddress,
     pub repayer: AccountAddress,
-    pub amount: BigDecimal,
+    pub amount: AssetAmount,
     pub use_a_tokens: bool,
 }
 
@@ -37,7 +40,7 @@ impl TryFrom<&Log<Repay>> for RepayEventDto {
             reserve: value.data().reserve,
             user: value.data().user,
             repayer: value.data().repayer,
-            amount: BigDecimal::from_str(&value.data().amount.to_string())?,
+            amount: value.data().amount,
             use_a_tokens: value.data().useATokens,
         })
     }

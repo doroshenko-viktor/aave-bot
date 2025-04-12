@@ -1,3 +1,6 @@
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct PriceFeedConfig {
     pub bybit_spot_url: String,
 }

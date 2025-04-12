@@ -1,8 +1,6 @@
-use crate::configuration::globals;
-
 use super::{
     bybit::{BybitClientSpot, BybitWsConnectionManager},
-    entities::{TickerData, TickerId},
+    entities::TickerData,
     ticker_service,
 };
 use eyre::Result;
@@ -22,4 +20,14 @@ impl PriceFeedsService {
 
         Ok(())
     }
+}
+
+pub async fn start_configured_price_feeds(
+    mut price_feeds_service: PriceFeedsService,
+) -> Result<()> {
+    for ticker in ticker_service::get_active_tickers() {
+        let _ = price_feeds_service.start_feed(ticker.1).await;
+    }
+
+    Ok(())
 }
