@@ -7,25 +7,43 @@ use alloy::{
             NonceFiller,
         },
     },
-    transports::ws::WsConnect,
+    transports::{http::reqwest, ws::WsConnect},
 };
 // use dotenv::dotenv;
 use dotenv::dotenv;
 use eyre::{Error, Result};
 use sqlx::postgres::PgPoolOptions;
-use std::env;
+use std::{env, str::FromStr};
 use tracing::debug;
 use tracing_subscriber::FmtSubscriber;
 
 use crate::{
-    NodeWsProvider,
+    NodeHttpProvider, NodeWsProvider,
     configuration::{
         AppMode, PostgresConfig, RpcProviderConfig, RpcRateLimiter, Settings,
         globals::{ASSET_RULES, DB_POOL, SETTINGS, get_db_pool},
     },
     shared::persistence::DbPool,
-    tokens::asset_rules_aggregator::AssetRules,
+    tokens::{asset_rules_aggregator::AssetRules, token_service},
 };
+use chrono::Local;
+use std::fmt;
+use tracing_subscriber::fmt::time::FormatTime;
+
+struct LocalTime;
+
+impl FormatTime for LocalTime {
+    fn format_time(
+        &self,
+        w: &mut tracing_subscriber::fmt::format::Writer<'_>,
+    ) -> fmt::Result {
+        write!(
+            w,
+            "{}",
+            Local::now().format("%Y-%m-%d %H:%M:%S")
+        )
+    }
+}
 
 pub struct Application {
     pub rpc_rate_limiter: RpcRateLimiter,
@@ -46,6 +64,8 @@ pub async fn configure_app() -> eyre::Result<()> {
     let Settings { postgres, rpc_config, .. } = SETTINGS.get().unwrap().clone();
 
     let db_pool = get_pool(&postgres).await?;
+    token_service::setup_tokens(&db_pool).await?;
+
     DB_POOL.set(db_pool)?;
 
     let asset_rules = get_asset_rules(get_db_pool()).await?;
@@ -61,7 +81,10 @@ fn configure_logging(mode: &AppMode) {
         AppMode::Staging => tracing::Level::INFO,
         AppMode::Test => tracing::Level::DEBUG,
     };
-    let subscriber = FmtSubscriber::builder().with_max_level(level).finish();
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(level)
+        .with_timer(LocalTime)
+        .finish();
 
     tracing::subscriber::set_global_default(subscriber)
         .expect("Unable to set global subscriber");
@@ -116,12 +139,22 @@ pub type WsNodeProvider = FillProvider<
     RootProvider,
 >;
 
-pub async fn get_new_rpc_provider(
+pub async fn get_new_stream_rpc_provider(
     config: &RpcProviderConfig,
 ) -> Result<NodeWsProvider> {
     let provider = ProviderBuilder::new()
-        .on_ws(WsConnect::new(&config.node_url))
+        .on_ws(WsConnect::new(&config.node_ws_url))
         .await?;
+
+    Ok(provider)
+}
+
+pub fn get_new_rpc_provider(
+    config: &RpcProviderConfig,
+) -> Result<NodeHttpProvider> {
+    let provider = ProviderBuilder::new().on_http(reqwest::Url::from_str(
+        &config.node_url,
+    )?);
 
     Ok(provider)
 }

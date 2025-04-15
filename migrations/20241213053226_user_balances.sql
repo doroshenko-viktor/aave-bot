@@ -1,4 +1,4 @@
-CREATE SCHEMA if NOT EXISTS operational;
+CREATE SCHEMA IF NOT EXISTS operational;
 
 CREATE TABLE IF NOT EXISTS operational.accounts (
     id serial PRIMARY KEY,
@@ -10,7 +10,7 @@ CREATE TABLE operational.account_collaterals (
     account_address varchar(42) NOT NULL,
     token_symbol varchar(6) NOT NULL,
     amount numeric(78, 0) NOT NULL,
-    FOREIGN key (account_address) REFERENCES operational.accounts (address),
+    FOREIGN KEY (account_address) REFERENCES operational.accounts (address),
     UNIQUE (account_address, token_symbol)
 );
 
@@ -19,6 +19,6 @@ CREATE TABLE operational.account_debts (
     account_address varchar(42) NOT NULL,
     token_symbol varchar(6) NOT NULL,
     amount numeric(78, 0) NOT NULL,
-    FOREIGN key (account_address) REFERENCES operational.accounts (address),
+    FOREIGN KEY (account_address) REFERENCES operational.accounts (address),
     UNIQUE (account_address, token_symbol)
 );

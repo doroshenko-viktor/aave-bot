@@ -1,44 +1,53 @@
-use crate::{
-    app::entities::ERC20TokenEntity, configuration::globals::get_db_pool,
-    tokens::entities::Token,
-};
-use alloy::primitives::Address;
-use eyre::Result;
+use std::str::FromStr;
 
-pub async fn get_tokens()
--> Result<impl Iterator<Item = (Token, ERC20TokenEntity)>> {
-    let pool = get_db_pool();
-    let tokens = sqlx::query!(
+use crate::{
+    shared::persistence::DbPool,
+    tokens::{ERC20TokenDbDto, entities::Token},
+};
+use alloy::primitives::{Address, Uint};
+use eyre::Result;
+use tracing::error;
+
+pub async fn get_tokens(
+    db_pool: &DbPool,
+) -> Result<impl Iterator<Item = Token>> {
+    let tokens = sqlx::query_as!(
+        ERC20TokenDbDto,
         r#"
-        select
-            tokens.id as token_id,
-            tokens.symbol as token_symbol,
-            onchain.id as onchain_id,
+        SELECT
+            id,
             address,
             name,
-            onchain.symbol as onchain_symbol,
+            symbol,
             decimals,
-            total_supply
-        from tokens.token_details as tokens
-        join tokens.onchain_token_data as onchain on tokens.id = onchain.token_id;
+            total_supply,
+            a_token_address,
+            stable_debt_token_address,
+            variable_debt_token_address
+        FROM tokens.tokens;
         "#
     )
-    .fetch_all(pool)
+    .fetch_all(db_pool)
     .await?
     .into_iter()
     .map(|rec| {
         let token_address = Address::from_slice(&rec.address);
-        let token = Token::new(rec.token_id as u8, rec.token_symbol, token_address, rec.decimals as u8);
-        let erc_token = ERC20TokenEntity {
-            address: Address::from_slice(&rec.address),
-            decimals: rec.decimals,
-            id: rec.onchain_id,
-            name: rec.name,
-            symbol: rec.onchain_symbol,
-            total_supply: rec.total_supply,
+        let x = rec.total_supply.with_scale(0).to_string();
+        println!("x: {}", x);
+        let total_supply = match Uint::<256, 4>::from_str(&x) {
+            Ok(val) => val,
+            Err(e) => {
+                error!("Failed to parse total supply: {}", e);
+                panic!("Failed to parse total supply")
+            }
         };
-
-        (token, erc_token)
+        Token::new(
+            rec.id as u8,
+            rec.symbol,
+            token_address,
+            rec.decimals as u8,
+            total_supply,
+        )
     });
 
     Ok(tokens)

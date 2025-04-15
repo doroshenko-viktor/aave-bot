@@ -302,7 +302,7 @@ async fn get_accounts_to_liquidate(
         CollectionResult::<(UserAccountRef, f32)>::new(),
         |mut acc, cur| {
             match cur {
-                Ok(x) => acc.result.push(x),
+                Ok(x) => acc.results.push(x),
                 Err(e) => acc.errors.push(e),
             }
             acc
@@ -317,7 +317,7 @@ async fn get_accounts_to_liquidate(
     }
 
     accounts_with_hf
-        .result
+        .results
         .into_iter()
         .filter_map(|(account, hf)| {
             if hf > 1_f32 {

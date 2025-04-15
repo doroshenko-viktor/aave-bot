@@ -1,25 +1,25 @@
-use std::str::FromStr;
-
 use alloy::{primitives::Address, rpc::types::Log};
-use bigdecimal::BigDecimal;
 use eyre::Error;
 use serde::{Deserialize, Serialize};
 
-use crate::{accounts::types::AssetAmount, contracts::pool::Pool::Supply};
+use crate::{
+    accounts::types::AssetAmount, contracts::pool::Pool::Supply,
+    shared::persistence::AccountAddress, tokens::TokenAddress,
+};
 
 /**
  * @dev Emitted on supply()
- * @param reserve The address of the underlying asset of the reserve
- * @param user The address initiating the supply
- * @param onBehalfOf The beneficiary of the supply, receiving the aTokens
- * @param amount The amount supplied
- * @param referralCode The referral code used
+ * @param `reserve` The address of the underlying asset of the reserve
+ * @param `user` The address initiating the supply
+ * @param `onBehalfOf` The beneficiary of the supply, receiving the aTokens
+ * @param `amount` The amount supplied
+ * @param `referralCode` The referral code used
  */
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct SupplyEventDto {
-    pub reserve: Address,
-    pub user: Address,
-    pub on_behalf_of: Address,
+    pub reserve: TokenAddress,
+    pub user: AccountAddress,
+    pub on_behalf_of: AccountAddress,
     pub amount: AssetAmount,
     pub referral_code: u16,
 }

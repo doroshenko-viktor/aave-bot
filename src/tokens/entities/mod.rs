@@ -1,5 +1,5 @@
 use super::{TokenSymbol, types::TokenId};
-use alloy::primitives::Address;
+use alloy::primitives::{Address, Uint};
 use std::fmt::Display;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -8,6 +8,7 @@ pub struct Token {
     pub(in crate::tokens) token_symbol: TokenSymbol,
     pub(in crate::tokens) address: Address,
     pub(in crate::tokens) decimals: u8,
+    pub(in crate::tokens) total_supply: Uint<256, 4>,
 }
 
 impl Token {
@@ -16,8 +17,9 @@ impl Token {
         token_symbol: String,
         address: Address,
         decimals: u8,
+        total_supply: Uint<256, 4>,
     ) -> Self {
-        Self { id, token_symbol, address, decimals }
+        Self { id, token_symbol, address, decimals, total_supply }
     }
 
     pub fn get_symbol(&self) -> String {

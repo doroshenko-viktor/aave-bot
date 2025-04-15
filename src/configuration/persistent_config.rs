@@ -22,8 +22,12 @@ pub enum ConfigurationKey {
 impl Display for ConfigurationKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConfigurationKey::LastDownloadedBlock => write!(f, "last_downloaded_block"),
-            ConfigurationKey::LastUserBalancesBlock => write!(f, "last_user_balances_block"),
+            ConfigurationKey::LastDownloadedBlock => {
+                write!(f, "last_downloaded_block")
+            }
+            ConfigurationKey::LastUserBalancesBlock => {
+                write!(f, "last_user_balances_block")
+            }
         }
     }
 }
@@ -48,6 +52,16 @@ pub async fn config_set(key: ConfigurationKey, value: &str) -> Result<()> {
     .await?;
 
     Ok(())
+}
+
+pub async fn get_as<T>(key: ConfigurationKey) -> Result<T>
+where
+    T: std::str::FromStr,
+{
+    let value = config_get(key).await?;
+    value
+        .parse::<T>()
+        .map_err(|_| eyre!("Failed to parse value: {}", value))
 }
 
 pub async fn config_get(key: ConfigurationKey) -> Result<String> {

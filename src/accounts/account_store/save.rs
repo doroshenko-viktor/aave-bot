@@ -3,7 +3,6 @@ use crate::{
     configuration::globals::get_db_pool,
     shared::persistence::{DbPool, get_placeholders_str},
     tokens::token_service,
-    utils::uint_ext::UintExt,
 };
 use eyre::Result;
 use futures::future::join_all;
@@ -30,9 +29,7 @@ pub async fn backup_user_data_store<'a>(
                     AccountCollateralDto {
                         account_address: account.address.to_checksum(None),
                         token_symbol: token.get_symbol(),
-                        amount: asset
-                            .to_big_decimal()
-                            .expect("Failed to convert to BigDecimal"),
+                        amount: asset.to_string(),
                     }
                 })
                 .collect();
@@ -44,9 +41,7 @@ pub async fn backup_user_data_store<'a>(
                     AccountDebtDto {
                         account_address: account.address.to_checksum(None),
                         token_symbol: token.get_symbol(),
-                        amount: asset
-                            .to_big_decimal()
-                            .expect("Failed to convert to BigDecimal"),
+                        amount: asset.to_string(),
                     }
                 })
                 .collect();

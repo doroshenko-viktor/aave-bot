@@ -1,4 +1,3 @@
-use bigdecimal::BigDecimal;
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]

@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use alloy::{
-    providers::{Provider, ProviderBuilder, WsConnect},
-    rpc::types::Log,
-};
+use alloy::rpc::types::Log;
 use crossbeam_queue::SegQueue;
 use eyre::{OptionExt, Result};
 use tokio::sync::{
@@ -22,17 +19,16 @@ use crate::{
         },
     },
     clients::{self, events::get_event_logs},
-    configuration::{
-        globals::get_global_settings,
-        persistent_config::{ConfigurationKey, config_get, config_set},
+    configuration::persistent_config::{
+        ConfigurationKey, config_get, config_set,
     },
-    setup,
-    shared::persistence::DbPool,
+    shared::{blockchain::errors::GetEventLogsError, persistence::DbPool},
     utils::iterators::GapSequence,
 };
 
 use super::events::{
-    BlockchainEvent, BlockchainEventPersistenceDto, get::get_events,
+    BlockchainEvent, BlockchainEventPersistenceDto,
+    get::{get_events, get_events_paginated},
 };
 
 pub struct SubscribeEventsLogConfig {
@@ -76,11 +72,11 @@ pub async fn subscribe_full_realtime_event_stream(
             }
         };
 
-    get_historical_event_logs(
+    get_historical_events(
         db_pool,
         provider,
-        last_downloaded_block_id,
         &result_tx,
+        last_downloaded_block_id + 1,
         last_blockchain_block_number,
     )
     .await;
@@ -210,24 +206,6 @@ pub async fn subscribe_full_realtime_event_stream(
     }
 
     Ok(result_rx)
-}
-
-pub async fn get_historical_event_logs(
-    db_pool: &DbPool,
-    provider: &NodeWsProvider,
-    from_block_number: u64,
-    result_tx: &Sender<BlockchainEvent>,
-    last_blockchain_block_number: u64,
-) {
-    get_new_historical_events(
-        db_pool,
-        provider,
-        result_tx,
-        from_block_number + 1,
-        last_blockchain_block_number,
-    )
-    .await
-    .unwrap();
 }
 
 pub async fn spawn_subscribe_realtime_event_logs_with_caching(
@@ -477,42 +455,80 @@ async fn remove_handled_queue_events(
 /**
 * Sends events to the handling queue starting from last handled event to the last downloaded.
 */
-async fn handle_downloaded_historical_events(
+pub async fn handle_downloaded_historical_events(
     db_pool: &DbPool,
     result_tx: &Sender<BlockchainEvent>,
     first_not_handled_block_number: u64,
     last_downloaded_block_number: u64,
 ) -> Result<()> {
-    for (left, right) in GapSequence::new(
-        first_not_handled_block_number,
-        last_downloaded_block_number,
-        9000,
-    ) {
-        let events = get_events(db_pool, left, right).await?;
+    let mut current_offset = 0;
+    let limit = 1000;
+    loop {
+        let events = get_events_paginated(
+            db_pool,
+            first_not_handled_block_number,
+            last_downloaded_block_number,
+            current_offset,
+            limit,
+        )
+        .await?;
+        current_offset += limit;
+
+        if events.is_empty() {
+            break;
+        }
 
         for event in events {
             result_tx.send(event).await?;
         }
     }
+
     Ok(())
 }
 
 /*
 Handles TODO:
 */
-pub async fn get_new_historical_events(
+pub async fn get_historical_events(
     pool: &DbPool,
     provider: &NodeWsProvider,
     result_tx: &Sender<BlockchainEvent>,
-    last_downloaded_block_id: u64,
-    beginning_block_number: u64,
+    first_block_number: u64,
+    last_block_number: u64,
 ) -> Result<()> {
-    for (left, right) in GapSequence::new(
-        last_downloaded_block_id + 1,
-        beginning_block_number,
-        9000,
-    ) {
-        let logs = get_event_logs(provider, left, right).await?;
+    let mut block_sequence = GapSequence::new(
+        first_block_number,
+        last_block_number,
+        10000,
+    );
+    while let Some((left, right)) = block_sequence.next() {
+        let logs = match get_event_logs(provider, left, right).await {
+            Ok(logs) => {
+                block_sequence.success_interval();
+                logs
+            }
+            Err(GetEventLogsError::TooManyLogs(Some(next_block_number))) => {
+                warn!(
+                    "Too many logs for block range {} - {}",
+                    left, right
+                );
+                block_sequence
+                    .fail_interval_with_next(next_block_number - 1)?;
+                continue;
+            }
+            Err(GetEventLogsError::TooManyLogs(None)) => {
+                warn!(
+                    "Too many logs for block range {} - {}",
+                    left, right
+                );
+                block_sequence.fail_interval();
+                continue;
+            }
+            Err(GetEventLogsError::Other(err)) => {
+                error!("Error on get event logs: {}", err);
+                return Err(err);
+            }
+        };
         info!(
             "For block range {} - {} retrieved {} logs",
             left,
@@ -522,12 +538,12 @@ pub async fn get_new_historical_events(
         if logs.is_empty() {
             continue;
         }
-        let (events, errors) = parse_event_logs(&logs);
+        let parsed_event_logs_result = parse_event_logs(&logs);
 
         // saving events to db before handling because this is init phase and not performance critical now and to avoid Arc and mutexes later during real time processing
-        let (persistent_events, errors) = convert_dtos(&events);
+        let persistent_events = convert_dtos(&parsed_event_logs_result.results);
         // TODO:handle errors
-        for event in events {
+        for event in parsed_event_logs_result.results {
             if let Err(e) = result_tx.send(event).await {
                 error!(
                     "Error trying to send blockchain events to the channel: {}",
@@ -535,7 +551,7 @@ pub async fn get_new_historical_events(
                 );
             }
         }
-        if let Err(e) = save_events(pool, persistent_events).await {
+        if let Err(e) = save_events(pool, persistent_events.results).await {
             error!(
                 "Error trying to save events to db: {}",
                 e
@@ -546,9 +562,10 @@ pub async fn get_new_historical_events(
             &right.to_string(),
         )
         .await?;
-        let x = beginning_block_number - right;
+        let x = last_block_number - right;
         warn!("{} blocks left", x)
     }
+
     Ok(())
 }
 
@@ -575,20 +592,20 @@ async fn consume_logs_queue(
 
             logs
         };
-        let (events, errors) = parse_event_logs(&logs);
+        let parsed_events = parse_event_logs(&logs);
         // TODO: handle errors
-        let (persistent_events, errors) =
-            super::events::save::convert_dtos(&events);
+        let persistent_events =
+            super::events::save::convert_dtos(&parsed_events.results);
         // TODO:handle errors
 
         {
             let db_pool = db_pool.clone();
             tokio::spawn(async move {
-                save_events(&db_pool, persistent_events).await;
+                save_events(&db_pool, persistent_events.results).await;
             });
         }
 
-        for event in events {
+        for event in parsed_events.results {
             result_tx.send(event).await?;
         }
     }

@@ -159,6 +159,7 @@ impl UserAccount {
     }
 
     pub fn handle_withdraw(&mut self, event: WithdrawEventDto) -> Result<()> {
+        debug!("handle_withdraw: {:#?}", event);
         let reserve_token = token_service::get_token_by_address(&event.reserve);
         match self.collaterals.entry(reserve_token.get_id()) {
             Entry::Occupied(mut val) => {
@@ -187,7 +188,7 @@ impl UserAccount {
 
         debug!("\tdebt asset before: {}", asset);
         debug!("\trepay event amount: {}", event.amount);
-        *asset = *asset - event.amount;
+        *asset -= event.amount;
         debug!("\tdebt asset after: {}", asset);
 
         Ok(())

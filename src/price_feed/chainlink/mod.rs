@@ -6,19 +6,18 @@ use crate::{
     contracts::chainlink::{Chainlink, ChainlinkInterface},
 };
 use alloy::{consensus::Transaction, primitives::Address, providers::Provider};
-use bigdecimal::BigDecimal;
 use eyre::Result;
 use futures::StreamExt;
 use time::PrimitiveDateTime;
 use tracing::error;
 
-pub struct ChainlinkFeedDto {
-    /* Current feed value */
-    pub current: BigDecimal,
-    /* A number identifying the data round (or update cycle) in which this value was produced */
-    pub round_id: BigDecimal,
-    pub updated_at: PrimitiveDateTime,
-}
+// pub struct ChainlinkFeedDto {
+//     /* Current feed value */
+//     pub current: BigDecimal,
+//     /* A number identifying the data round (or update cycle) in which this value was produced */
+//     pub round_id: BigDecimal,
+//     pub updated_at: PrimitiveDateTime,
+// }
 
 // pub async fn get_price(
 //     feed_client: &ChainlinkInterface,

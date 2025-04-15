@@ -6,8 +6,6 @@ pub mod types;
 pub mod value_objects;
 
 use crate::shared::persistence::AccountAddress;
-use bigdecimal::BigDecimal;
-use types::AccountAmount;
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct AccountInsertDto {
@@ -18,12 +16,12 @@ pub struct AccountInsertDto {
 pub struct AccountCollateralDto {
     pub account_address: String,
     pub token_symbol: String,
-    pub amount: BigDecimal,
+    pub amount: String,
 }
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct AccountDebtDto {
     pub account_address: String,
     pub token_symbol: String,
-    pub amount: BigDecimal,
+    pub amount: String,
 }

@@ -1,6 +1,4 @@
-use alloy::primitives::Address;
-use bigdecimal::BigDecimal;
-
+use alloy::primitives::{Address, Uint};
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct AccountEntity {
@@ -15,5 +13,5 @@ pub struct ERC20TokenEntity {
     pub name: Option<String>,
     pub symbol: String,
     pub decimals: i32,
-    pub total_supply: BigDecimal,
+    pub total_supply: Uint<256, 4>,
 }

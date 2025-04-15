@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::str::{FromStr, from_utf8};
 use std::sync::Arc;
 
 use super::UserAccountStore;
@@ -7,8 +7,7 @@ use crate::accounts::{AccountCollateralDto, AccountDebtDto};
 use crate::configuration::persistent_config::{ConfigurationKey, config_get};
 use crate::shared::persistence::{AccountAddress, DbPool};
 use crate::tokens::token_service;
-use crate::utils::uint_ext::BigDecimalExt;
-use alloy::primitives::Address;
+use alloy::primitives::{Address, Uint};
 use dashmap::DashMap;
 use eyre::Result;
 use hashbrown::HashMap;
@@ -41,7 +40,7 @@ pub async fn get_collaterals(
         select
             account_address,
             token_symbol,
-            amount
+            (amount::TEXT)::VARCHAR(78) as "amount!: String"
         from operational.account_collaterals
         "#
     )
@@ -58,7 +57,7 @@ pub async fn get_debts(pool: &DbPool) -> Result<Vec<AccountDebtDto>> {
         select 
             account_address, 
             token_symbol, 
-            amount 
+            (amount::TEXT)::VARCHAR(78) as "amount!: String"
         from operational.account_debts
     "#
     )
@@ -115,9 +114,9 @@ pub async fn restore_user_account_store(
                         );
                         res.insert(
                             token.get_id(),
-                            cur.amount
-                                .to_uint()
-                                .expect("Failed to convert amount to uint"),
+                            Uint::<256, 4>::from_str(&cur.amount).expect(
+                                "Expected to get a valid collateral amount",
+                            ),
                         );
                         res
                     });
@@ -131,9 +130,9 @@ pub async fn restore_user_account_store(
                         );
                         res.insert(
                             token.get_id(),
-                            cur.amount
-                                .to_uint()
-                                .expect("Failed to convert amount to uint"),
+                            Uint::<256, 4>::from_str(&cur.amount).expect(
+                                "Expected to get a valid collateral amount",
+                            ),
                         );
                         res
                     });

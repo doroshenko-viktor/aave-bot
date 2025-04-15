@@ -10,10 +10,10 @@ use crate::{
 };
 
 /**
- * reserve The address of the underlying asset being withdrawn
- * user The address initiating the withdrawal, owner of aTokens
- * to The address that will receive the underlying
- * amount The amount to be withdrawn
+ * `reserve` The address of the underlying asset being withdrawn
+ * `user` The address initiating the withdrawal, owner of aTokens
+ * `to` The address that will receive the underlying
+ * `amount` The amount to be withdrawn
  */
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct WithdrawEventDto {

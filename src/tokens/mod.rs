@@ -1,12 +1,13 @@
 pub mod asset_rules_aggregator;
+pub mod blockchain;
 pub mod blockchain_client;
 pub mod entities;
-mod persistence;
+pub mod persistence;
 pub mod token_service;
 pub mod types;
 
-use alloy::{primitives::Address, sol};
-use bigdecimal::BigDecimal;
+use alloy::primitives::{Address, Uint};
+use sqlx::types::BigDecimal;
 
 pub type TokenSymbol = String;
 
@@ -16,22 +17,36 @@ This is needed only for readability purposes
 */
 pub type TokenAddress = Address;
 
-sol! {
-    #[sol(rpc)]
-    #[derive(Debug)]
-    interface IERC20 {
-        function name() external view returns (string);
-        function symbol() external view returns (string);
-        function decimals() external view returns (uint8);
-        function totalSupply() external view returns (uint256);
-    }
+#[derive(Debug, sqlx::FromRow)]
+pub struct ERC20TokenDto {
+    pub address: Address,
+    pub name: Option<String>,
+    pub symbol: TokenSymbol,
+    pub decimals: i32,
+    pub total_supply: Uint<256, 4>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
-pub struct ERC20TokenDto {
-    pub address: TokenAddress,
+pub struct ERC20TokenDbDto {
+    pub id: i64,
+    pub address: Vec<u8>,
     pub name: Option<String>,
     pub symbol: TokenSymbol,
     pub decimals: i32,
     pub total_supply: BigDecimal,
+    pub a_token_address: Vec<u8>,
+    pub stable_debt_token_address: Vec<u8>,
+    pub variable_debt_token_address: Vec<u8>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct ERC20TokenSaveDbDto {
+    pub address: Vec<u8>,
+    pub name: Option<String>,
+    pub symbol: TokenSymbol,
+    pub decimals: i32,
+    pub total_supply: BigDecimal,
+    pub a_token_address: Vec<u8>,
+    pub stable_debt_token_address: Vec<u8>,
+    pub variable_debt_token_address: Vec<u8>,
 }

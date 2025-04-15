@@ -1,10 +1,11 @@
+#[derive(Debug, Default)]
 pub struct CollectionResult<T> {
-    pub result: Vec<T>,
+    pub results: Vec<T>,
     pub errors: Vec<eyre::Report>,
 }
 
 impl<T> CollectionResult<T> {
     pub fn new() -> Self {
-        Self { result: Vec::new(), errors: Vec::new() }
+        Self { results: Vec::new(), errors: Vec::new() }
     }
 }

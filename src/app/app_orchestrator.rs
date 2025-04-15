@@ -9,12 +9,12 @@ use tokio::sync::mpsc::Receiver;
 Handle asset price changes invoking liquidation if price change will affect some account becomes unhealthy
  */
 pub async fn spawn_handling_price_changes(
-    user_data_store: UserAccountStore,
+    user_account_store: UserAccountStore,
     mut changed_price_token_rx: Receiver<&'static Token>,
 ) -> Result<()> {
     tokio::spawn(async move {
         while let Some(token) = changed_price_token_rx.recv().await {
-            let accounts_to_liquidate = user_data_store
+            let accounts_to_liquidate = user_account_store
                 .get_accounts_to_liquidate_on_price_change(token.get_id())
                 .await;
             // TODO: call liquidation functionality

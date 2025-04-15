@@ -13,4 +13,9 @@ max_connections = 10
 url = "postgres://bot:password@localhost:5432/aave_bot"
 
 [rpc_config]
-node_url = "wss://mainnet.infura.io/ws/v3/YOUR_INFURA_KEY"
+node_ws_url = "wss://mainnet.infura.io/ws/v3/YOUR_INFURA_KEY"
+node_url = "https://mainnet.infura.io/v3/YOUR_INFURA_KEY"
+
+[blockchain]
+aave_v3_pool_contract_address = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
+aave_v3_pool_data_provider_address = "0x497a1994c46d4f6C864904A9f1fac6328Cb7C8a6"

@@ -1,10 +1,10 @@
 pub mod globals;
 pub mod persistent_config;
 pub mod tokens;
-
 use config::{Config, ConfigError, Environment, File};
 use eyre::eyre;
 use eyre::{Error, Ok, Result};
+pub use persistent_config::{config_get, config_set, get_as};
 use serde::Deserialize;
 
 use governor::{
@@ -15,6 +15,7 @@ use governor::{
 };
 
 use crate::app::config::AppConfig;
+use crate::shared::config::BlockchainConfig;
 
 pub type RpcRateLimiter = RateLimiter<
     NotKeyed,
@@ -67,6 +68,7 @@ pub struct PostgresConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct RpcProviderConfig {
     pub node_url: String,
+    pub node_ws_url: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -74,6 +76,7 @@ pub struct Settings {
     pub app: AppConfig,
     pub rpc_config: RpcProviderConfig,
     pub postgres: PostgresConfig,
+    pub blockchain: BlockchainConfig,
 }
 
 const CONFIG_FOLDER_PATH: &str = "./config/";

@@ -29,3 +29,14 @@ pub type NodeWsProvider = FillProvider<
     >,
     RootProvider,
 >;
+
+pub type NodeHttpProvider = FillProvider<
+    JoinFill<
+        Identity,
+        JoinFill<
+            GasFiller,
+            JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>,
+        >,
+    >,
+    RootProvider,
+>;

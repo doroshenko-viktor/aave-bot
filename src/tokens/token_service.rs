@@ -1,44 +1,53 @@
 use hashbrown::HashMap;
+use tracing::debug;
+
+use crate::shared::persistence::DbPool;
 
 use super::types::TokenId;
 use super::{TokenAddress, TokenSymbol, entities::Token, persistence};
 use std::{collections::HashSet, sync::OnceLock};
 
 // TODO: use AsyncOnceCell or OnceCell
-pub static TOKENS: OnceLock<HashMap<TokenId, Token>> = OnceLock::new();
+static TOKENS: OnceLock<HashMap<TokenId, Token>> = OnceLock::new();
+static TOKENS_BY_ADDRESSES: OnceLock<HashMap<&TokenAddress, &Token>> =
+    OnceLock::new();
+static TOKENS_BY_SYMBOLS: OnceLock<HashMap<&TokenSymbol, &Token>> =
+    OnceLock::new();
 
-pub async fn setup_tokens() -> eyre::Result<()> {
-    let tokens = persistence::get_tokens()
-        .await
-        .expect("Tokens configuration must be read correctly")
-        .into_iter()
-        .fold(HashMap::new(), |mut res, (token, _)| {
-            res.insert(token.id, token);
-
-            res
-        });
-    let _ = TOKENS.set(tokens);
+pub async fn setup_tokens(db_pool: &DbPool) -> eyre::Result<()> {
+    let _ = TOKENS.set(
+        persistence::get_tokens(db_pool)
+            .await
+            .expect("Tokens configuration must be read correctly")
+            .into_iter()
+            .fold(HashMap::new(), |mut res, token| {
+                res.insert(token.id, token);
+                res
+            }),
+    );
+    TOKENS_BY_ADDRESSES.set(
+        TOKENS
+            .get()
+            .expect("TOKENS accessed before set")
+            .iter()
+            .fold(HashMap::new(), |mut res, (_, cur)| {
+                res.insert(&cur.address, cur);
+                res
+            }),
+    );
+    TOKENS_BY_SYMBOLS.set(
+        TOKENS
+            .get()
+            .expect("TOKENS accessed before set")
+            .iter()
+            .fold(HashMap::new(), |mut res, (_, cur)| {
+                res.insert(&cur.token_symbol, cur);
+                res
+            }),
+    );
 
     Ok(())
 }
-
-pub static TOKENS_BY_ADDRESSES: OnceLock<HashMap<&TokenAddress, &Token>> =
-    OnceLock::new();
-// LazyLock::new(|| {
-//     TOKENS.iter().fold(HashMap::new(), |mut res, cur| {
-//         res.insert(&cur.1.address, cur.1);
-//         res
-//     })
-// });
-
-pub static TOKENS_BY_SYMBOLS: OnceLock<HashMap<&TokenSymbol, &Token>> =
-    OnceLock::new();
-// LazyLock::new(|| {
-//     TOKENS.iter().fold(HashMap::new(), |mut res, cur| {
-//         res.insert(&cur.1.token_symbol, cur.1);
-//         res
-//     })
-// });
 
 pub fn get_token_by_id(token_id: TokenId) -> &'static Token {
     TOKENS
@@ -49,6 +58,7 @@ pub fn get_token_by_id(token_id: TokenId) -> &'static Token {
 }
 
 pub fn get_token_by_address(address: &TokenAddress) -> &'static Token {
+    debug!("get_token_by_address: {:?}", address);
     TOKENS_BY_ADDRESSES
         .get()
         .unwrap()

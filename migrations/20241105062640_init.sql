@@ -1,20 +1,20 @@
-CREATE SCHEMA if NOT EXISTS blockchain;
+CREATE SCHEMA IF NOT EXISTS blockchain;
 
-CREATE SCHEMA if NOT EXISTS tokens;
+CREATE SCHEMA IF NOT EXISTS tokens;
 
-CREATE SCHEMA if NOT EXISTS config;
+CREATE SCHEMA IF NOT EXISTS config;
 
-CREATE SCHEMA if NOT EXISTS logs;
+CREATE SCHEMA IF NOT EXISTS logs;
 
-CREATE SCHEMA if NOT EXISTS price_feed;
+CREATE SCHEMA IF NOT EXISTS price_feed;
 
 --
 --CREATE TABLES
 --
 CREATE TABLE IF NOT EXISTS config.cache (
     id serial PRIMARY KEY,
-    key varchar(50),
-    value varchar,
+    "key" varchar(50),
+    "value" varchar,
     CONSTRAINT idx_key_unique UNIQUE (key)
 );
 
