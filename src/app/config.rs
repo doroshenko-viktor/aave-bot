@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use serde::Deserialize;
 
-use crate::{accounts::config::AccountsConfig, price_feed::PriceFeedConfig};
+use crate::{accounts::AccountsConfig, price_feed::PriceFeedConfig};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct AppConfig {

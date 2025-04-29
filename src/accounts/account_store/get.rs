@@ -1,16 +1,18 @@
-use std::str::{FromStr, from_utf8};
-use std::sync::Arc;
-
-use super::UserAccountStore;
-use crate::accounts::entities::{UserAccount, UserAccountRef};
+use super::account_store_builder::AccountStoreBuilder;
+use crate::accounts::entities::{
+    Collateral, Debt, UserAccount, UserAccountRef,
+};
 use crate::accounts::{AccountCollateralDto, AccountDebtDto};
 use crate::configuration::persistent_config::{ConfigurationKey, config_get};
 use crate::shared::persistence::{AccountAddress, DbPool};
 use crate::tokens::token_service;
+use crate::utils::uint_ext::DecimalExt;
 use alloy::primitives::{Address, Uint};
 use dashmap::DashMap;
 use eyre::Result;
 use hashbrown::HashMap;
+use std::str::FromStr;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub async fn get_accounts(pool: &DbPool) -> Result<Vec<AccountAddress>> {
@@ -25,8 +27,10 @@ pub async fn get_accounts(pool: &DbPool) -> Result<Vec<AccountAddress>> {
     .await?
     .into_iter()
     .map(|record| {
-        Address::from_str(&record.address)
-            .expect("Expected to get a valid account address from db")
+        AccountAddress::new(
+            Address::from_str(&record.address)
+                .expect("Expected to get a valid account address from db"),
+        )
     })
     .collect())
 }
@@ -40,7 +44,8 @@ pub async fn get_collaterals(
         select
             account_address,
             token_symbol,
-            (amount::TEXT)::VARCHAR(78) as "amount!: String"
+            amount,
+            a_token_amount
         from operational.account_collaterals
         "#
     )
@@ -57,7 +62,7 @@ pub async fn get_debts(pool: &DbPool) -> Result<Vec<AccountDebtDto>> {
         select 
             account_address, 
             token_symbol, 
-            (amount::TEXT)::VARCHAR(78) as "amount!: String"
+            amount
         from operational.account_debts
     "#
     )
@@ -69,13 +74,15 @@ pub async fn get_debts(pool: &DbPool) -> Result<Vec<AccountDebtDto>> {
 
 pub async fn restore_user_account_store(
     pool: &DbPool,
-) -> Result<UserAccountStore> {
+) -> Result<AccountStoreBuilder> {
     let mut collaterals_by_account_address =
         get_collaterals(pool).await?.into_iter().fold(
             HashMap::<AccountAddress, Vec<AccountCollateralDto>>::new(),
             |mut res, cur| {
-                let address = Address::from_str(&cur.account_address).expect(
-                    "Expected to receive a valid account address from db",
+                let address = AccountAddress::new(
+                    Address::from_str(&cur.account_address).expect(
+                        "Expected to receive a valid account address from db",
+                    ),
                 );
                 res.entry(address)
                     .and_modify(|accounts| {
@@ -85,11 +92,15 @@ pub async fn restore_user_account_store(
                 res
             },
         );
+
     let mut debts_by_account_address = get_debts(pool).await?.into_iter().fold(
         HashMap::<AccountAddress, Vec<AccountDebtDto>>::new(),
         |mut res, cur| {
-            let address = Address::from_str(&cur.account_address)
-                .expect("Expected to receive a valid account address from db");
+            let address = AccountAddress::new(
+                Address::from_str(&cur.account_address).expect(
+                    "Expected to receive a valid account address from db",
+                ),
+            );
             res.entry(address)
                 .and_modify(|accounts| {
                     accounts.push(cur);
@@ -112,10 +123,12 @@ pub async fn restore_user_account_store(
                         let token = token_service::get_token_by_symbol(
                             &cur.token_symbol,
                         );
+
                         res.insert(
                             token.get_id(),
-                            Uint::<256, 4>::from_str(&cur.amount).expect(
-                                "Expected to get a valid collateral amount",
+                            Collateral::new(
+                                cur.amount.to_uint().unwrap(),
+                                cur.a_token_amount.to_uint().unwrap(),
                             ),
                         );
                         res
@@ -130,15 +143,13 @@ pub async fn restore_user_account_store(
                         );
                         res.insert(
                             token.get_id(),
-                            Uint::<256, 4>::from_str(&cur.amount).expect(
-                                "Expected to get a valid collateral amount",
-                            ),
+                            Debt::new(cur.amount.to_uint().unwrap()),
                         );
                         res
                     });
 
                 res.insert(
-                    account_address.clone(),
+                    account_address,
                     Arc::new(RwLock::new(UserAccount::new(
                         account_address,
                         collaterals,
@@ -154,9 +165,8 @@ pub async fn restore_user_account_store(
         config_get(ConfigurationKey::LastUserBalancesBlock)
             .await?
             .parse()?;
-
-    Ok(UserAccountStore::new(
-        Arc::new(accounts),
+    Ok(AccountStoreBuilder::new(
         last_user_balances_block_number,
+        accounts,
     ))
 }

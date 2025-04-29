@@ -3,6 +3,16 @@
 rayon
 async streams
 
+## Run
+
+To run application in specific environment, use the following env variable:
+
+```bash
+export APP_MODE=[dev|prod|stage|test]
+```
+
+Then run the application:
+
 ## Links
 
 [Smart contracts docs](https://aave.com/docs/developers/smart-contracts)
@@ -10,11 +20,18 @@ async streams
 
 ## Onchain Data
 
+16496817
 Repay event - first block 16497341
 16498089; // withdraw event block
 
 ## TODO
 
+- // TODO: move token
+  // reference to event_body and find token on event deserialization
+
+- allow instant negative balances because it may be caused by invalid log order and correct balances are forced by aave anyway
+- save account state daily and recaluclate it starting last day's state by historic day events to keep valid state event if events were received not in right order
+- track ReserveDataUpdated
 - eliminate BigDecimal - use u64 and alloy int<256, 4> for performance
 - move lib types to shared
 - prices feed emits price events - consider mechanism to track event ids and skip handling of newer emmitted events for this thicker if generated more events than handled, e.g. keep track of ticker event ids in prices aggregator
@@ -41,3 +58,15 @@ if liquidation was not successful, check why: it may be possible that price from
 ## Alloy tips
 
 - add `#[sol(rpc)]` to sol! macro to generate callable methods for contract.
+
+## Testing
+
+`cargo llvm-cov --open` - to open coverage report in browser
+
+```
+
+```
+
+```
+
+```

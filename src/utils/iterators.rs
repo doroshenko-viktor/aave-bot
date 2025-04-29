@@ -66,15 +66,18 @@ impl GapSequence {
         Ok(())
     }
 
-    pub fn success_interval(&mut self) {
+    pub fn success_interval(&mut self, increase_interval: bool) {
         self.interval_error = false;
 
         self.current = self.current + self.interval + 1;
         self.previous = self.current;
 
-        self.interval *= 2;
-        if self.interval > self.max_interval {
-            self.interval = self.max_interval;
+        if increase_interval {
+            self.interval *= 2;
+
+            if self.interval > self.max_interval {
+                self.interval = self.max_interval;
+            }
         }
     }
 }
@@ -122,13 +125,13 @@ pub mod tests {
         let mut gap_sequence = GapSequence::new(0, 40, 10);
 
         assert_eq!(gap_sequence.next(), Some((0, 10)));
-        gap_sequence.success_interval();
+        gap_sequence.success_interval(true);
         assert_eq!(gap_sequence.next(), Some((11, 21)));
-        gap_sequence.success_interval();
+        gap_sequence.success_interval(true);
         assert_eq!(gap_sequence.next(), Some((22, 32)));
-        gap_sequence.success_interval();
+        gap_sequence.success_interval(true);
         assert_eq!(gap_sequence.next(), Some((33, 40)));
-        gap_sequence.success_interval();
+        gap_sequence.success_interval(true);
         assert_eq!(gap_sequence.next(), None);
     }
 
@@ -137,13 +140,13 @@ pub mod tests {
         let mut gap_sequence = GapSequence::new(0, 25, 10);
 
         assert_eq!(gap_sequence.next(), Some((0, 10)));
-        gap_sequence.success_interval();
+        gap_sequence.success_interval(true);
         assert_eq!(gap_sequence.next(), Some((11, 21)));
         gap_sequence.fail_interval();
         assert_eq!(gap_sequence.next(), Some((11, 16)));
-        gap_sequence.success_interval();
+        gap_sequence.success_interval(true);
         assert_eq!(gap_sequence.next(), Some((17, 25)));
-        gap_sequence.success_interval();
+        gap_sequence.success_interval(true);
         assert_eq!(gap_sequence.next(), None);
     }
 
@@ -152,17 +155,17 @@ pub mod tests {
         let mut gap_sequence = GapSequence::new(0, 25, 10);
 
         assert_eq!(gap_sequence.next(), Some((0, 10)));
-        gap_sequence.success_interval();
+        gap_sequence.success_interval(true);
         assert_eq!(gap_sequence.next(), Some((11, 21)));
         gap_sequence.fail_interval();
         assert_eq!(gap_sequence.next(), Some((11, 16)));
         gap_sequence.fail_interval();
         assert_eq!(gap_sequence.next(), Some((11, 13)));
-        gap_sequence.success_interval();
+        gap_sequence.success_interval(true);
         assert_eq!(gap_sequence.next(), Some((14, 18)));
-        gap_sequence.success_interval();
+        gap_sequence.success_interval(true);
         assert_eq!(gap_sequence.next(), Some((19, 25)));
-        gap_sequence.success_interval();
+        gap_sequence.success_interval(true);
         assert_eq!(gap_sequence.next(), None);
     }
 
@@ -171,13 +174,13 @@ pub mod tests {
         let mut gap_sequence = GapSequence::new(0, 25, 10);
 
         assert_eq!(gap_sequence.next(), Some((0, 10)));
-        gap_sequence.success_interval();
+        gap_sequence.success_interval(true);
         assert_eq!(gap_sequence.next(), Some((11, 21)));
         gap_sequence.fail_interval_with_next(18).unwrap();
         assert_eq!(gap_sequence.next(), Some((11, 18)));
-        gap_sequence.success_interval();
+        gap_sequence.success_interval(true);
         assert_eq!(gap_sequence.next(), Some((19, 25)));
-        gap_sequence.success_interval();
+        gap_sequence.success_interval(true);
         assert_eq!(gap_sequence.next(), None);
     }
 }

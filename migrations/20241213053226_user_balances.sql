@@ -10,6 +10,7 @@ CREATE TABLE operational.account_collaterals (
     account_address varchar(42) NOT NULL,
     token_symbol varchar(6) NOT NULL,
     amount numeric(78, 0) NOT NULL,
+    a_token_amount numeric(78, 0) NOT NULL,
     FOREIGN KEY (account_address) REFERENCES operational.accounts (address),
     UNIQUE (account_address, token_symbol)
 );

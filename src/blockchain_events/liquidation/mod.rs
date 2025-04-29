@@ -1,14 +1,10 @@
-use std::str::FromStr;
-
-use alloy::rpc::types::Log;
-use eyre::{Error, Result};
-use serde::{Deserialize, Serialize};
-use sqlx::types::BigDecimal;
-
 use crate::{
     accounts::types::AssetAmount, contracts::pool::Pool::LiquidationCall,
     shared::persistence::AccountAddress, tokens::TokenAddress,
 };
+use alloy::rpc::types::Log;
+use eyre::{Error, Result};
+use serde::{Deserialize, Serialize};
 
 /**
  * collateralAsset The address of the underlying asset used as collateral, to receive as result of the liquidation
@@ -20,7 +16,7 @@ use crate::{
  * receiveAToken True if the liquidators wants to receive the collateral aTokens, `false` if he wants
  * to receive the underlying collateral asset directly
  */
-#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize, Clone)]
 pub struct LiquidationEventDto {
     pub collateral_asset: TokenAddress,
     pub debt_asset: TokenAddress,
@@ -38,12 +34,12 @@ impl TryFrom<&Log<LiquidationCall>> for LiquidationEventDto {
         Ok(LiquidationEventDto {
             collateral_asset: value.data().collateralAsset,
             debt_asset: value.data().debtAsset,
-            user: value.data().user,
+            user: value.data().user.into(),
             debt_to_cover: value.data().debtToCover,
             liquidated_collateral_amount: value
                 .data()
                 .liquidatedCollateralAmount,
-            liquidator: value.data().liquidator,
+            liquidator: value.data().liquidator.into(),
             receive_a_token: value.data().receiveAToken,
         })
     }

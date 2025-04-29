@@ -29,6 +29,7 @@ pub enum AppMode {
     Production,
     Staging,
     Test,
+    Debug,
 }
 
 impl TryFrom<&str> for AppMode {
@@ -40,6 +41,7 @@ impl TryFrom<&str> for AppMode {
             "prod" => Ok(Self::Production),
             "stage" => Ok(Self::Staging),
             "test" => Ok(Self::Test),
+            "debug" => Ok(Self::Debug),
             _ => Err(eyre!(
                 "Couldn't parse APP_MODE from given value: {}",
                 value
@@ -55,6 +57,7 @@ impl ToString for AppMode {
             AppMode::Production => "prod".into(),
             AppMode::Staging => "stage".into(),
             AppMode::Test => "test".into(),
+            AppMode::Debug => "debug".into(),
         }
     }
 }
@@ -67,6 +70,8 @@ pub struct PostgresConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct RpcProviderConfig {
+    pub max_node_credits: u32,
+    pub max_blockchain_retry_count: u8,
     pub node_url: String,
     pub node_ws_url: String,
 }

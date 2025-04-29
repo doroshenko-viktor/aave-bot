@@ -1,5 +1,6 @@
 use eyre::{Error, Result, eyre};
 use sqlx::query_as;
+use tracing::{debug, error};
 
 use crate::{
     shared::persistence::DbPool, utils::result_utils::CollectionResult,
@@ -18,14 +19,19 @@ pub async fn get_events_paginated(
         BlockchainEventPersistenceDto,
         r#"
         select
+            transaction_hash,
             block_number,
             log_number,
             event_type_id,
             body
         from blockchain.events
         where block_number >= $1 and block_number <= $2
-            and (body ->> 'user' = '0xd322a49006fc828f9b5b37ab215f99b4e5cab19c'
-            or body  ->> 'on_behalf_of' = '0xd322a49006fc828f9b5b37ab215f99b4e5cab19c')
+            --and (
+             --   body ->> 'user' = '0xeb52371f5a251e93799a64844a88d3f56872ad00'
+            --    or body  ->> 'on_behalf_of' = '0xeb52371f5a251e93799a64844a88d3f56872ad00'
+             --   or body ->> 'from' = '0xeb52371f5a251e93799a64844a88d3f56872ad00'
+              --  or body ->> 'to' = '0xeb52371f5a251e93799a64844a88d3f56872ad00'
+            --)
         order by block_number, log_number asc
         offset $3
         limit $4;
@@ -59,6 +65,7 @@ pub async fn get_events(
         BlockchainEventPersistenceDto,
         r#"
         select
+            transaction_hash,
             block_number,
             log_number,
             event_type_id,
@@ -87,9 +94,20 @@ fn convert_to_blockchain_events(
 ) -> CollectionResult<BlockchainEvent> {
     let events = events
         .into_iter()
-        .map(|x| {
+        .map(|event_dto| {
+            debug!("event_dto: {:#?}", event_dto);
             let x: BlockchainEvent =
-                BlockchainEventPersistenceDto::try_into(x)?;
+                match BlockchainEventPersistenceDto::try_into(event_dto) {
+                    Ok(val) => val,
+                    Err(err) => {
+                        error!("Can't convert BlockchainEventPersistenceDto to BlockchainEvent: {:#?}", err);
+                        return Err(eyre!(
+                            "Can't convert BlockchainEventPersistenceDto to BlockchainEvent: {:#?}",
+                            err
+                        ))
+                    }
+                };
+
             Ok(x)
         })
         .fold(

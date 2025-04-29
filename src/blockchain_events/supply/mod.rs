@@ -1,4 +1,4 @@
-use alloy::{primitives::Address, rpc::types::Log};
+use alloy::rpc::types::Log;
 use eyre::Error;
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +15,7 @@ use crate::{
  * @param `amount` The amount supplied
  * @param `referralCode` The referral code used
  */
-#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize, Clone)]
 pub struct SupplyEventDto {
     pub reserve: TokenAddress,
     pub user: AccountAddress,
@@ -35,8 +35,8 @@ impl TryFrom<&Log<Supply>> for SupplyEventDto {
 
     fn try_from(value: &Log<Supply>) -> Result<Self, Error> {
         let reserve = value.inner.reserve;
-        let user = value.inner.user;
-        let on_behalf_of = value.inner.onBehalfOf;
+        let user = value.inner.user.into();
+        let on_behalf_of = value.inner.onBehalfOf.into();
         let amount = value.inner.amount;
         let referral_code = value.inner.referralCode;
 

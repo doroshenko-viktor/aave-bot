@@ -1,41 +1,69 @@
 use crate::{
     accounts::types::AssetAmount,
-    blockchain_events::{
-        borrow::BorrowEventDto, liquidation::LiquidationEventDto,
-        repay::RepayEventDto, supply::SupplyEventDto,
-        withdraw::WithdrawEventDto,
-    },
     configuration::globals,
     price_feed::prices_aggregator,
     shared::persistence::AccountAddress,
-    tokens::{token_service, types::TokenId},
+    tokens::{entities::Token, token_service, types::TokenId},
+    utils::uint_ext::UintExt,
 };
-use alloy::primitives::Address;
+use alloy::primitives::Uint;
 use eyre::{Result, eyre};
 use hashbrown::{HashMap, hash_map::Entry};
+use serde::de;
 use std::{collections::HashSet, sync::Arc};
-use tracing::{debug, warn};
+use tracing::{debug, error, info, warn};
 
 pub type UserAccountRef = Arc<tokio::sync::RwLock<UserAccount>>;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Copy)]
+pub struct Collateral {
+    pub amount: AssetAmount,
+    pub a_token_amount: AssetAmount,
+}
+
+impl Collateral {
+    pub fn new(amount: AssetAmount, a_token_amount: AssetAmount) -> Self {
+        Self { amount, a_token_amount }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Debt {
+    pub amount: AssetAmount,
+}
+
+impl Debt {
+    pub fn new(amount: AssetAmount) -> Self {
+        Self { amount }
+    }
+}
+
+#[derive(Debug)]
 pub struct UserAccount {
     /* Account address on blockchain */
-    pub(crate) address: Address,
+    pub(crate) address: AccountAddress,
     // TODO: change to be EnumMap for better CPU caching
     // or [Option<_>; N] where N is amount of tokens configured and Some for asset present in the
     // system
     // pub(crate) collaterals: [Option<AssetAmount>; 32],
     // pub(crate) debts: [Option<AssetAmount>; 32],
-    pub(crate) collaterals: HashMap<TokenId, AssetAmount>,
-    pub(crate) debts: HashMap<TokenId, AssetAmount>,
+    pub(crate) collaterals: HashMap<TokenId, Collateral>,
+    pub(crate) debts: HashMap<TokenId, Debt>,
 }
 
 impl UserAccount {
+    pub fn new_with_address(address: AccountAddress) -> Self {
+        Self {
+            address,
+            collaterals: HashMap::new(),
+            debts: HashMap::new(),
+        }
+    }
+
     pub fn new(
-        address: Address,
-        collaterals: HashMap<TokenId, AssetAmount>,
-        debts: HashMap<TokenId, AssetAmount>,
+        address: AccountAddress,
+        collaterals: HashMap<TokenId, Collateral>,
+        debts: HashMap<TokenId, Debt>,
     ) -> Self {
         Self { address, collaterals, debts }
     }
@@ -59,24 +87,33 @@ impl UserAccount {
     // TODO: this calculation uses thresold for both collaterals and debts, but should only for
     // collaterals
     pub async fn calculate_health_factor(&self) -> Result<f32> {
-        Ok(
-            self.get_asset_sum(&self.collaterals).await?
-                / self.get_asset_sum(&self.debts).await?,
-        )
+        Ok(self
+            .get_asset_sum(
+                self.collaterals.iter().map(|(token_id, collateral)| {
+                    (*token_id, collateral.amount)
+                }),
+            )
+            .await?
+            / self
+                .get_asset_sum(
+                    self.debts
+                        .iter()
+                        .map(|(token_id, debt)| (*token_id, debt.amount)),
+                )
+                .await?)
     }
 
     async fn get_asset_sum(
         &self,
-        list: &HashMap<TokenId, AssetAmount>,
+        list: impl Iterator<Item = (TokenId, AssetAmount)>,
     ) -> Result<f32> {
         let asset_rules = globals::get_asset_rules();
         let health_factor = list
-            .iter()
             .filter_map(|(token_id, asset_amount)| {
-                let token = token_service::get_token_by_id(*token_id);
+                let token = token_service::get_token_by_id(token_id);
                 let threshold =
-                    asset_rules.get_asset_liquidation_threshold(*token_id);
-                let Some(price) = prices_aggregator::get_usd_price(*token_id)
+                    asset_rules.get_asset_liquidation_threshold(token_id);
+                let Some(price) = prices_aggregator::get_usd_price(token_id)
                 else {
                     warn!(
                         "Price for token {} not found",
@@ -107,7 +144,7 @@ impl UserAccount {
     ) -> impl Iterator<Item = (TokenId, AssetAmount)> {
         self.collaterals
             .iter()
-            .map(|(token_id, amount)| (*token_id, *amount))
+            .map(|(token_id, collateral)| (*token_id, collateral.amount))
     }
 
     pub fn get_debt_list(
@@ -115,144 +152,234 @@ impl UserAccount {
     ) -> impl Iterator<Item = (TokenId, AssetAmount)> {
         self.debts
             .iter()
-            .map(|(token_id, amount)| (*token_id, *amount))
+            .map(|(token_id, debt)| (*token_id, debt.amount)) // TODO: check if amount vs a_tokenamount 
     }
 
-    pub fn handle_supply(&mut self, event: SupplyEventDto) {
-        let reserve_token = token_service::get_token_by_address(&event.reserve);
+    pub fn supply(
+        &mut self,
+        token_id: TokenId,
+        amount: Uint<256, 4>,
+        a_token_amount: Uint<256, 4>,
+    ) {
         self.collaterals
-            .entry(reserve_token.get_id())
+            .entry(token_id)
             .and_modify(|val| {
-                debug!(
-                    "Updating collateral amount {}=>{}",
-                    val, event.amount
+                info!(
+                    "Existing collateral amount {}",
+                    val.amount
                 );
-                *val += &event.amount;
+                val.amount += &amount;
+                val.a_token_amount += &a_token_amount;
+                info!(
+                    "Updated collateral amount {}",
+                    val.amount
+                );
             })
             .or_insert_with(|| {
                 debug!(
                     "Adding collateral with init amount {}",
-                    event.amount
+                    amount
                 );
-                event.amount
+                Collateral { amount, a_token_amount }
             });
     }
 
-    pub fn handle_borrow(&mut self, event: BorrowEventDto) {
-        let reserve_token = token_service::get_token_by_address(&event.reserve);
-        self.debts
-            .entry(reserve_token.get_id())
-            .and_modify(|val| {
-                debug!(
-                    "Updating debt amount {}=>{}",
-                    val, event.amount
+    pub fn borrow(
+        &mut self,
+        token: &Token,
+        amount: Uint<256, 4>,
+    ) -> Result<()> {
+        #[cfg(debug_assertions)]
+        {
+            if self.collaterals.is_empty() {
+                info!("{:#?}", self.collaterals);
+                error!(
+                    "Borrowing {} {} for address {} with no collateral",
+                    token.get_repr(amount)?,
+                    token.id,
+                    self.address
                 );
-                *val += &event.amount;
+            }
+        }
+        self.debts
+            .entry(token.id)
+            .and_modify(|val| {
+                info!(
+                    "Initial debt amount {}",
+                    token.get_repr(val.amount).unwrap()
+                );
+                val.amount += &amount;
+                info!(
+                    "Updated debt amount {}",
+                    token.get_repr(val.amount).unwrap()
+                );
             })
             .or_insert_with(|| {
                 debug!(
                     "Adding debt with init amount {}",
-                    event.amount
+                    token.get_repr(amount).unwrap()
                 );
-                event.amount
+                Debt { amount }
             });
-    }
-
-    pub fn handle_withdraw(&mut self, event: WithdrawEventDto) -> Result<()> {
-        debug!("handle_withdraw: {:#?}", event);
-        let reserve_token = token_service::get_token_by_address(&event.reserve);
-        match self.collaterals.entry(reserve_token.get_id()) {
-            Entry::Occupied(mut val) => {
-                let val = val.get_mut();
-                *val -= &event.amount;
-                debug!("Updated collateral amount {}", val);
-                Ok(())
-            }
-            Entry::Vacant(_) => Err(eyre!(
-                "Collateral with for asset '{}' not found",
-                event.reserve
-            )),
-        }
-    }
-
-    pub fn handle_repay(&mut self, event: RepayEventDto) -> Result<()> {
-        let reserve_token = token_service::get_token_by_address(&event.reserve);
-        let asset =
-            if let Some(asset) = self.debts.get_mut(&reserve_token.get_id()) {
-                asset
-            } else {
-                return Err(eyre!(
-                    "Not found debt asset to be repaid"
-                ));
-            };
-
-        debug!("\tdebt asset before: {}", asset);
-        debug!("\trepay event amount: {}", event.amount);
-        *asset -= event.amount;
-        debug!("\tdebt asset after: {}", asset);
 
         Ok(())
     }
 
-    pub fn handle_liquidation(
+    pub fn withdraw(
         &mut self,
-        event: LiquidationEventDto,
+        token: &Token,
+        amount: Uint<256, 4>,
+        a_token_amount: Uint<256, 4>,
     ) -> Result<()> {
-        let debt_token = token_service::get_token_by_address(&event.debt_asset);
-        let debt_asset_amount = if let Some(debt_asset) =
-            self.debts.get_mut(&debt_token.get_id())
-        {
-            debt_asset
+        match self.collaterals.entry(token.id) {
+            Entry::Occupied(mut val) => {
+                let val = val.get_mut();
+                // TODO: check if amount is not more than available
+                info!(
+                    "Initial collateral amount {}",
+                    token.get_repr(val.amount)?
+                );
+                val.amount -= &amount;
+                val.a_token_amount -= &a_token_amount;
+                info!(
+                    "Updated collateral amount {}",
+                    token.get_repr(val.amount)?
+                );
+                Ok(())
+            }
+            Entry::Vacant(_) => Err(eyre!(
+                "Collateral for token_id '{}' not found at account '{}'",
+                token.id,
+                self.address
+            )),
+        }
+    }
+
+    pub fn repay(&mut self, token: &Token, amount: Uint<256, 4>) -> Result<()> {
+        let asset = if let Some(asset) = self.debts.get_mut(&token.id) {
+            asset
+        } else {
+            return Err(eyre!(
+                "Not found debt asset to be repaid for address: {}",
+                self.address
+            ));
+        };
+
+        info!(
+            "Initial debt amount {}",
+            token.get_repr(asset.amount)?
+        );
+        asset.amount -= amount;
+        info!(
+            "Updated debt amount {}",
+            token.get_repr(asset.amount)?
+        );
+
+        Ok(())
+    }
+
+    pub fn liquidate(
+        &mut self,
+        debt_token_id: TokenId,
+        collateral_token_id: TokenId,
+        debt_to_cover: AssetAmount,
+        liquidated_collateral_amount: AssetAmount,
+        a_token_liquidated_amount: AssetAmount,
+    ) -> Result<()> {
+        let debt = if let Some(debt) = self.debts.get_mut(&debt_token_id) {
+            debt
         } else {
             return Err(eyre!(
                 "Not found debt asset to be repaid by liquidation"
             ));
         };
 
-        let collateral_token =
-            token_service::get_token_by_address(&event.collateral_asset);
-        let collateral_asset_amount = if let Some(collateral_asset) =
-            self.collaterals.get_mut(&collateral_token.get_id())
+        let collateral = if let Some(collateral) =
+            self.collaterals.get_mut(&collateral_token_id)
         {
-            collateral_asset
+            collateral
         } else {
             return Err(eyre!(
                 "Not found collateral asset to be liquidated"
             ));
         };
 
-        debug!(
-            "debt asset before: {}",
-            debt_asset_amount
-        );
-        debug!(
-            "debt to cover amount: {}",
-            event.debt_to_cover
-        );
-        *debt_asset_amount = *debt_asset_amount - event.debt_to_cover;
-        debug!(
-            "debt asset after: {}",
-            debt_asset_amount
-        );
-        debug!(
-            "collateral asset before: {}",
-            collateral_asset_amount
-        );
-        debug!(
-            "liquidated collateral amount: {}",
-            event.liquidated_collateral_amount
-        );
-        *collateral_asset_amount =
-            *collateral_asset_amount - event.liquidated_collateral_amount;
-        debug!(
-            "collateral asset after: {}",
-            collateral_asset_amount
-        );
+        debt.amount = debt.amount - debt_to_cover;
+        collateral.amount = collateral.amount - liquidated_collateral_amount;
+        collateral.a_token_amount =
+            collateral.a_token_amount - a_token_liquidated_amount;
 
         Ok(())
     }
 
-    pub fn address(&self) -> Address {
+    pub fn handle_transfer_out(
+        &mut self,
+        token: &Token,
+        amount_subtracted: AssetAmount,
+        a_token_amount_subtracted: AssetAmount,
+    ) -> Result<()> {
+        match self.collaterals.entry(token.get_id()) {
+            Entry::Occupied(mut entry) => {
+                let val = entry.get_mut();
+                info!(
+                    "Initial asset amount {} {}",
+                    token.get_repr(val.amount)?,
+                    token.get_symbol(),
+                );
+                if val.amount < amount_subtracted {
+                    Err(eyre::eyre!(
+                        "Collateral of {} for account '{}' is not enough",
+                        token,
+                        self.address
+                    ))
+                } else {
+                    val.amount -= amount_subtracted;
+                    val.a_token_amount -= a_token_amount_subtracted;
+                    info!(
+                        "Updated collateral amount {}",
+                        token.get_repr(val.amount)?
+                    );
+                    Ok(())
+                }
+            }
+            Entry::Vacant(_) => Err(eyre::eyre!(
+                "Collateral of token: {} for account '{:#x}' not found",
+                token.get_symbol(),
+                self.address
+            )),
+        }
+    }
+
+    pub fn handle_transfer_in(
+        &mut self,
+        token: &Token,
+        amount: AssetAmount,
+        a_token_amount: AssetAmount,
+    ) -> Result<()> {
+        match self.collaterals.entry(token.id) {
+            Entry::Occupied(mut entry) => {
+                let val = entry.get_mut();
+                val.amount += amount;
+                val.a_token_amount += a_token_amount;
+                info!(
+                    "Updated collateral amount {} {}",
+                    token.get_repr(val.amount)?,
+                    self.address,
+                );
+            }
+            Entry::Vacant(entry) => {
+                warn!(
+                    "Collateral with token_id: {} for account '{}' not found. Creating new account.",
+                    token.id, self.address
+                );
+                entry.insert(Collateral { amount, a_token_amount });
+            }
+        };
+
+        Ok(())
+    }
+
+    pub fn address(&self) -> AccountAddress {
         self.address
     }
 }

@@ -1,12 +1,10 @@
-use crate::{accounts::types::AssetAmount, contracts::pool::Pool::Borrow};
-use alloy::{
-    primitives::{Address, Uint},
-    rpc::types::Log,
+use crate::{
+    accounts::types::AssetAmount, contracts::pool::Pool::Borrow,
+    shared::persistence::AccountAddress, tokens::TokenAddress,
 };
+use alloy::{primitives::Uint, rpc::types::Log};
 use eyre::{Error, Result};
 use serde::{Deserialize, Serialize};
-use sqlx::types::BigDecimal;
-use std::str::FromStr;
 
 /**
  * @dev Emitted on borrow() and flashLoan() when debt needs to be opened
@@ -19,15 +17,15 @@ use std::str::FromStr;
  * @param borrowRate The numeric rate at which the user has borrowed, expressed in ray
  * @param referralCode The referral code used
  */
-#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize, Clone)]
 pub struct BorrowEventDto {
     pub amount: AssetAmount,
     pub borrow_rate: Uint<256, 4>,
     pub interest_rate_mode: u8,
-    pub on_behalf_of: Address,
+    pub on_behalf_of: AccountAddress,
     pub referral_code: u16,
-    pub reserve: Address,
-    pub user: Address,
+    pub reserve: TokenAddress,
+    pub user: AccountAddress,
 }
 
 impl TryFrom<&Log<Borrow>> for BorrowEventDto {
@@ -37,10 +35,11 @@ impl TryFrom<&Log<Borrow>> for BorrowEventDto {
         let amount = value.inner.amount;
         let borrow_rate = value.inner.borrowRate;
         let interest_rate_mode = value.inner.interestRateMode;
-        let on_behalf_of = value.inner.onBehalfOf;
+        let on_behalf_of = AccountAddress::new(value.inner.onBehalfOf);
         let referral_code = value.inner.referralCode;
         let reserve = value.inner.reserve;
-        let user = value.inner.user;
+        let user = AccountAddress::new(value.inner.user);
+
         Ok(BorrowEventDto {
             amount,
             borrow_rate,

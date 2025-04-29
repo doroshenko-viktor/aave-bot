@@ -14,7 +14,9 @@ static CONFIGURATION_CACHE: LazyLock<Arc<DashMap<ConfigurationKey, String>>> =
 #[derive(Debug, PartialEq, Hash, Eq, Clone, Copy)]
 pub enum ConfigurationKey {
     /* last downloaded blockchain data block */
-    LastDownloadedBlock,
+    LastDownloadedAaveEventsBlock,
+    /* last downloaded blockahin data block for ERC20 token transfers */
+    LastDownloadedTransfersBlock,
     /* last calculated user balances block */
     LastUserBalancesBlock,
 }
@@ -22,11 +24,14 @@ pub enum ConfigurationKey {
 impl Display for ConfigurationKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConfigurationKey::LastDownloadedBlock => {
+            ConfigurationKey::LastDownloadedAaveEventsBlock => {
                 write!(f, "last_downloaded_block")
             }
             ConfigurationKey::LastUserBalancesBlock => {
                 write!(f, "last_user_balances_block")
+            }
+            ConfigurationKey::LastDownloadedTransfersBlock => {
+                write!(f, "last_downloaded_transfers_block")
             }
         }
     }

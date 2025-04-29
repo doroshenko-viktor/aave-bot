@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{fmt::format, sync::Arc};
 
-use alloy::rpc::types::Log;
+use alloy::{primitives::Address, rpc::types::Log};
 use crossbeam_queue::SegQueue;
 use eyre::{OptionExt, Result};
 use tokio::sync::{
@@ -23,6 +23,9 @@ use crate::{
         ConfigurationKey, config_get, config_set,
     },
     shared::{blockchain::errors::GetEventLogsError, persistence::DbPool},
+    tokens::blockchain_client::{
+        get_a_token_transfers, get_all_tokens_transfer_logs,
+    },
     utils::iterators::GapSequence,
 };
 
@@ -47,7 +50,7 @@ pub async fn subscribe_full_realtime_event_stream(
         spawn_subscribe_realtime_event_logs_with_caching(&provider).await?;
 
     let last_downloaded_block_id: u64 =
-        config_get(ConfigurationKey::LastDownloadedBlock)
+        config_get(ConfigurationKey::LastDownloadedAaveEventsBlock)
             .await?
             .parse()?;
 
@@ -72,7 +75,7 @@ pub async fn subscribe_full_realtime_event_stream(
             }
         };
 
-    get_historical_events(
+    get_full_historical_events(
         db_pool,
         provider,
         &result_tx,
@@ -126,7 +129,7 @@ pub async fn subscribe_full_realtime_event_stream(
                         .await
                         .unwrap();
                     config_set(
-                        ConfigurationKey::LastDownloadedBlock,
+                        ConfigurationKey::LastDownloadedAaveEventsBlock,
                         &format!("{}", log.block_number.unwrap()),
                     )
                     .await
@@ -185,7 +188,7 @@ pub async fn subscribe_full_realtime_event_stream(
                             .await
                             .unwrap();
                         config_set(
-                            ConfigurationKey::LastDownloadedBlock,
+                            ConfigurationKey::LastDownloadedAaveEventsBlock,
                             &format!("{}", log.block_number.unwrap()),
                         )
                         .await
@@ -462,6 +465,7 @@ pub async fn handle_downloaded_historical_events(
     last_downloaded_block_number: u64,
 ) -> Result<()> {
     let mut current_offset = 0;
+    let mut total = 0;
     let limit = 1000;
     loop {
         let events = get_events_paginated(
@@ -473,23 +477,37 @@ pub async fn handle_downloaded_historical_events(
         )
         .await?;
         current_offset += limit;
+        debug!("Retrieved {} of events", events.len());
 
         if events.is_empty() {
             break;
         }
 
         for event in events {
+            if total > 10 {
+                break;
+            }
             result_tx.send(event).await?;
+            total += 1;
         }
     }
 
     Ok(())
 }
 
-/*
-Handles TODO:
+/**
+* Retrieves ERC20 asset token transfer logs and AAVE events from the blockchain, stores them in db
+* and sends to given channel.
+*
+* *NOTE:* There are two similar functions but specifically for AAVE events and asset transfers.
+* This is done because fetching historical events for transfers and AAVE events is not profficient
+* with same block range - this will lead to overuse of Infura API, so preparing historical events
+* for account balances calculation is better separately. But when app is in production mode it
+* needs all events to be handled in block order. Meaning it needs transfer and AAVE events from one
+* block simultaneously. This is done using this particular function.
+*
 */
-pub async fn get_historical_events(
+pub async fn get_full_historical_events(
     pool: &DbPool,
     provider: &NodeWsProvider,
     result_tx: &Sender<BlockchainEvent>,
@@ -501,12 +519,47 @@ pub async fn get_historical_events(
         last_block_number,
         10000,
     );
+    let mut increase_accumulator: u8 = 0;
+
     while let Some((left, right)) = block_sequence.next() {
-        let logs = match get_event_logs(provider, left, right).await {
-            Ok(logs) => {
-                block_sequence.success_interval();
-                logs
-            }
+        let transfer_logs =
+            match get_all_tokens_transfer_logs(provider, left, right).await {
+                Ok(logs) => logs.filter(|log| {
+                    let from = Address::from_slice(&log.topics()[1][12..]);
+                    let to = Address::from_slice(&log.topics()[2][12..]);
+
+                    from != Address::ZERO && to != Address::ZERO
+                }),
+                Err(GetEventLogsError::TooManyLogs(Some(
+                    next_block_number,
+                ))) => {
+                    warn!(
+                        "Too many logs for block range {} - {}",
+                        left, right
+                    );
+                    block_sequence
+                        .fail_interval_with_next(next_block_number - 1)?;
+                    continue;
+                }
+                Err(GetEventLogsError::TooManyLogs(None)) => {
+                    warn!(
+                        "Too many logs for block range {} - {}",
+                        left, right
+                    );
+                    block_sequence.fail_interval();
+                    continue;
+                }
+                Err(GetEventLogsError::Other(err)) => {
+                    error!(
+                        "Error on get transfer event logs: {:?}",
+                        err
+                    );
+                    return Err(err);
+                }
+            };
+
+        let aave_logs = match get_event_logs(provider, left, right).await {
+            Ok(logs) => logs,
             Err(GetEventLogsError::TooManyLogs(Some(next_block_number))) => {
                 warn!(
                     "Too many logs for block range {} - {}",
@@ -529,6 +582,19 @@ pub async fn get_historical_events(
                 return Err(err);
             }
         };
+        if increase_accumulator > 3 {
+            block_sequence.success_interval(true);
+            increase_accumulator = 0;
+        } else {
+            block_sequence.success_interval(false);
+            increase_accumulator += 1;
+        }
+
+        let mut logs = transfer_logs
+            .chain(aave_logs.into_iter())
+            .collect::<Vec<_>>();
+        logs.sort_by_key(|log| log.block_number.unwrap_or_default());
+
         info!(
             "For block range {} - {} retrieved {} logs",
             left,
@@ -551,6 +617,7 @@ pub async fn get_historical_events(
                 );
             }
         }
+
         if let Err(e) = save_events(pool, persistent_events.results).await {
             error!(
                 "Error trying to save events to db: {}",
@@ -558,10 +625,203 @@ pub async fn get_historical_events(
             );
         }
         config_set(
-            ConfigurationKey::LastDownloadedBlock,
+            ConfigurationKey::LastDownloadedAaveEventsBlock,
             &right.to_string(),
         )
         .await?;
+        let x = last_block_number - right;
+        warn!("{} blocks left", x)
+    }
+
+    Ok(())
+}
+
+pub async fn get_historical_asset_transfers(
+    pool: &DbPool,
+    provider: &NodeWsProvider,
+    first_block_number: u64,
+    last_block_number: u64,
+) -> Result<()> {
+    let mut block_sequence = GapSequence::new(
+        first_block_number,
+        last_block_number,
+        250000,
+    );
+    let mut increase_accumulator: u8 = 0;
+
+    while let Some((left, right)) = block_sequence.next() {
+        let mut transfer_logs =
+            match get_all_tokens_transfer_logs(provider, left, right).await {
+                Ok(logs) => logs
+                    .filter(|log| {
+                        let from = Address::from_slice(&log.topics()[1][12..]);
+                        let to = Address::from_slice(&log.topics()[2][12..]);
+
+                        from != Address::ZERO && to != Address::ZERO
+                    })
+                    .collect::<Vec<_>>(),
+                Err(GetEventLogsError::TooManyLogs(Some(
+                    next_block_number,
+                ))) => {
+                    warn!(
+                        "Too many logs for block range {} - {}",
+                        left, right
+                    );
+                    block_sequence
+                        .fail_interval_with_next(next_block_number - 1)?;
+                    continue;
+                }
+                Err(GetEventLogsError::TooManyLogs(None)) => {
+                    warn!(
+                        "Too many logs for block range {} - {}",
+                        left, right
+                    );
+                    block_sequence.fail_interval();
+                    continue;
+                }
+                Err(GetEventLogsError::Other(err)) => {
+                    error!(
+                        "Error on get transfer event logs: {:?}",
+                        err
+                    );
+                    return Err(err);
+                }
+            };
+
+        if increase_accumulator > 3 {
+            block_sequence.success_interval(true);
+            increase_accumulator = 0;
+        } else {
+            block_sequence.success_interval(false);
+            increase_accumulator += 1;
+        }
+
+        transfer_logs.sort_by_key(|log| log.block_number.unwrap_or_default());
+
+        info!(
+            "For block range {} - {} retrieved {} transfer logs",
+            left,
+            right,
+            transfer_logs.len()
+        );
+
+        config_set(
+            ConfigurationKey::LastDownloadedTransfersBlock,
+            &right.to_string(),
+        )
+        .await?;
+
+        if transfer_logs.is_empty() {
+            continue;
+        }
+        let parsed_event_logs_result = parse_event_logs(&transfer_logs);
+
+        let persistent_events = convert_dtos(&parsed_event_logs_result.results);
+
+        if let Err(e) = save_events(pool, persistent_events.results).await {
+            error!(
+                "Error trying to save events to db: {}",
+                e
+            );
+        }
+        let x = last_block_number - right;
+        warn!("{} blocks left", x)
+    }
+
+    Ok(())
+}
+
+pub async fn get_historical_aave_events(
+    pool: &DbPool,
+    provider: &NodeWsProvider,
+    first_block_number: u64,
+    last_block_number: u64,
+) -> Result<()> {
+    let mut block_sequence = GapSequence::new(
+        first_block_number,
+        last_block_number,
+        9500,
+    );
+    while let Some((left, right)) = block_sequence.next() {
+        let mut logs = match get_event_logs(provider, left, right).await {
+            Ok(logs) => logs,
+            Err(GetEventLogsError::TooManyLogs(Some(next_block_number))) => {
+                warn!(
+                    "Too many logs for block range {} - {}",
+                    left, right
+                );
+                block_sequence
+                    .fail_interval_with_next(next_block_number - 1)?;
+                continue;
+            }
+            Err(GetEventLogsError::TooManyLogs(None)) => {
+                warn!(
+                    "Too many logs for block range {} - {}",
+                    left, right
+                );
+                block_sequence.fail_interval();
+                continue;
+            }
+            Err(GetEventLogsError::Other(err)) => {
+                error!("Error on get event logs: {}", err);
+                return Err(err);
+            }
+        };
+
+        block_sequence.success_interval(true);
+
+        logs.sort_by_key(|log| log.block_number.unwrap_or_default());
+
+        info!(
+            "For block range {} - {} retrieved {} transfer logs",
+            left,
+            right,
+            logs.len()
+        );
+
+        config_set(
+            ConfigurationKey::LastDownloadedAaveEventsBlock,
+            &right.to_string(),
+        )
+        .await?;
+
+        if logs.is_empty() {
+            continue;
+        }
+        let parsed_event_logs_result = parse_event_logs(&logs);
+        if !parsed_event_logs_result.errors.is_empty() {
+            let e = parsed_event_logs_result
+                .errors
+                .iter()
+                .map(|e| format!("{:?}", e))
+                .collect::<Vec<_>>()
+                .join("\n");
+            error!(
+                "Error parsing event logs to BlockchainEvents: {}",
+                e
+            )
+        }
+
+        let persistent_events = convert_dtos(&parsed_event_logs_result.results);
+
+        if !persistent_events.errors.is_empty() {
+            let e = persistent_events
+                .errors
+                .iter()
+                .map(|e| format!("{:?}", e))
+                .collect::<Vec<_>>()
+                .join("\n");
+            error!(
+                "Error parding event logs to BlockchainEvents: {}",
+                e
+            )
+        }
+        if let Err(e) = save_events(pool, persistent_events.results).await {
+            error!(
+                "Error trying to save events to db: {}",
+                e
+            );
+        }
         let x = last_block_number - right;
         warn!("{} blocks left", x)
     }

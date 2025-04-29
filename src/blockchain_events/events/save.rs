@@ -16,13 +16,14 @@ pub async fn save_events(
         events.len()
     );
     let mut query_builder = r#"INSERT INTO blockchain.events (
+                transaction_hash,
                 block_number,
                 log_number,
                 event_type_id,
                 body
             ) VALUES"#
         .to_string();
-    let placeholders = get_placeholders_str(4, events.len());
+    let placeholders = get_placeholders_str(5, events.len());
     query_builder.push_str(&placeholders);
     query_builder
         .push_str(r#" ON CONFLICT (block_number, log_number) DO NOTHING"#);
@@ -31,6 +32,7 @@ pub async fn save_events(
         sqlx::query(&query_builder),
         |query, event| {
             query
+                .bind(event.transaction_hash)
                 .bind(event.block_number)
                 .bind(event.log_number)
                 .bind(event.event_type_id)

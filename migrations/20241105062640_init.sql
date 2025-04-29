@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS blockchain.blocks (
 
 CREATE TABLE IF NOT EXISTS blockchain.events (
     id serial PRIMARY KEY,
+    transaction_hash bytea NOT NULL,
     block_number bigint NOT NULL,
     log_number integer NOT NULL,
     event_type_id smallint NOT NULL,

@@ -1,4 +1,3 @@
-// use alloy::providers::{self, ProviderBuilder, WsConnect, Ws};
 use alloy::{
     providers::{
         Identity, ProviderBuilder, RootProvider,
@@ -9,12 +8,11 @@ use alloy::{
     },
     transports::{http::reqwest, ws::WsConnect},
 };
-// use dotenv::dotenv;
 use dotenv::dotenv;
 use eyre::{Error, Result};
 use sqlx::postgres::PgPoolOptions;
 use std::{env, str::FromStr};
-use tracing::debug;
+use tracing::{debug, error};
 use tracing_subscriber::FmtSubscriber;
 
 use crate::{
@@ -53,6 +51,7 @@ pub struct Application {
  * Configuration relies on some global variables, so considering downsides need to check initialize order to avoid failures
  */
 pub async fn configure_app() -> eyre::Result<()> {
+    color_eyre::install()?;
     dotenv().ok();
     let mode =
         AppMode::try_from(&env::var("APP_MODE").unwrap_or("dev".into())[..])?;
@@ -76,10 +75,11 @@ pub async fn configure_app() -> eyre::Result<()> {
 
 fn configure_logging(mode: &AppMode) {
     let level = match mode {
-        AppMode::Development => tracing::Level::DEBUG,
+        AppMode::Development => tracing::Level::INFO,
         AppMode::Production => tracing::Level::WARN,
         AppMode::Staging => tracing::Level::INFO,
         AppMode::Test => tracing::Level::DEBUG,
+        AppMode::Debug => tracing::Level::DEBUG,
     };
     let subscriber = FmtSubscriber::builder()
         .with_max_level(level)

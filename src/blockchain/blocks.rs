@@ -27,11 +27,7 @@ impl BlockDto {
         block_number: BigDecimal,
         block_timestamp: PrimitiveDateTime,
     ) -> Self {
-        Self {
-            block_hash,
-            block_number,
-            block_timestamp,
-        }
+        Self { block_hash, block_number, block_timestamp }
     }
 }
 
@@ -53,17 +49,17 @@ impl TryFrom<&Block> for BlockDto {
     fn try_from(value: &Block) -> Result<Self, Self::Error> {
         let block_hash = value.header.hash.to_vec();
         let block_number = BigDecimal::from(value.header.number);
-        let block_timestamp =
-            match OffsetDateTime::from_unix_timestamp(value.header.timestamp as i64) {
-                Ok(x) => Ok(PrimitiveDateTime::new(x.date(), x.time())),
-                Err(e) => Err(eyre!("Can't parse timestamp: {}", e)),
-            }?;
+        let block_timestamp = match OffsetDateTime::from_unix_timestamp(
+            value.header.timestamp as i64,
+        ) {
+            Ok(x) => Ok(PrimitiveDateTime::new(
+                x.date(),
+                x.time(),
+            )),
+            Err(e) => Err(eyre!("Can't parse timestamp: {}", e)),
+        }?;
 
-        Ok(BlockDto {
-            block_hash,
-            block_number,
-            block_timestamp,
-        })
+        Ok(BlockDto { block_hash, block_number, block_timestamp })
     }
 }
 
@@ -94,7 +90,10 @@ struct BlockInsertResult {
     block_number: BigDecimal,
 }
 
-pub async fn save_blocks(pool: &DbPool, blocks: Vec<BlockDto>) -> eyre::Result<BlockDatabaseIds> {
+pub async fn save_blocks(
+    pool: &DbPool,
+    blocks: Vec<BlockDto>,
+) -> eyre::Result<BlockDatabaseIds> {
     info!("Saving blocks into database");
     let mut query_builder = String::from(
         r#"INSERT INTO eth.blocks (
@@ -118,12 +117,13 @@ pub async fn save_blocks(pool: &DbPool, blocks: Vec<BlockDto>) -> eyre::Result<B
             .bind(block.block_timestamp);
     }
     let res = query.fetch_all(pool).await?;
-    let ids = res
-        .into_iter()
-        .fold(HashMap::<BigDecimal, i32>::new(), |mut acc, x| {
+    let ids = res.into_iter().fold(
+        HashMap::<BigDecimal, i32>::new(),
+        |mut acc, x| {
             acc.entry(x.block_number).or_insert_with(|| x.db_id);
             acc
-        });
+        },
+    );
 
     Ok(ids)
 }

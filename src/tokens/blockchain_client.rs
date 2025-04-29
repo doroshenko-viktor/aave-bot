@@ -1,6 +1,6 @@
 use super::blockchain::contracts::IERC20Fallback::{self, IERC20FallbackInstance};
 use super::blockchain::contracts::IERC20::IERC20Instance;
-use super::ERC20TokenDto;
+use super::{token_service, ERC20TokenDto};
 use crate::shared::blockchain::contracts::aave_protocol_data_provider::AaveProtocolDataProvider::getReserveTokensAddressesReturn;
 use crate::shared::blockchain::contracts::aave_protocol_data_provider::IPoolDataProvider::TokenData;
 use crate::NodeHttpProvider;
@@ -14,8 +14,9 @@ use alloy::primitives::Address;
 use alloy::rpc::types::{Filter, Log};
 use alloy::sol_types::SolEvent;
 use eyre::Result;
+use futures::{FutureExt, StreamExt, TryStreamExt};
 use std::num::NonZero;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 const GET_TOKEN_DETAILS_CREDITS: u32 = 200;
 
@@ -143,6 +144,30 @@ impl ERC20TokenContract {
     }
 }
 
+pub async fn get_all_tokens_transfer_logs(
+    provider: &NodeHttpProvider,
+    from_block: u64,
+    to_block: u64,
+) -> Result<impl Iterator<Item = Log>, GetEventLogsError> {
+    let tokens = token_service::get_tokens();
+    let res = futures::stream::iter(tokens)
+        .then(async |token| {
+            get_a_token_transfers(
+                provider,
+                from_block,
+                to_block,
+                token.a_token_address,
+            )
+            .await
+        })
+        .try_collect::<Vec<_>>()
+        .await?
+        .into_iter()
+        .flatten();
+
+    Ok(res)
+}
+
 pub async fn get_a_token_transfers(
     provider: &NodeHttpProvider,
     from_block: u64,
@@ -156,8 +181,8 @@ pub async fn get_a_token_transfers(
         .to_block(BlockNumberOrTag::Number(to_block));
 
     debug!(
-        "Requesting portion of a_token transfer logs between blocks: {} - {}",
-        from_block, to_block
+        "For token address: {} requesting portion of a_token transfer logs between blocks: {} - {}",
+        a_token_address, from_block, to_block
     );
 
     blockchain::logs::get_logs(provider, &filter).await

@@ -1,8 +1,17 @@
-use alloy::{rpc::types::Log, sol_types::SolEvent};
+use alloy::{
+    primitives::{TxHash, Uint},
+    rpc::types::Log,
+    sol_types::SolEvent,
+};
 use eyre::{Error, Ok, OptionExt, eyre};
 use serde::{Deserialize, Serialize};
 
-use crate::contracts::pool::Pool;
+use crate::{
+    contracts::pool::Pool,
+    tokens::blockchain::{
+        contracts::IERC20, erc20_transfer::Erc20TransferEventDto,
+    },
+};
 
 use super::{
     borrow::BorrowEventDto, liquidation::LiquidationEventDto,
@@ -13,20 +22,22 @@ pub mod event_log_parser;
 pub mod get;
 pub mod save;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BlockchainEvent {
+    pub transaction_hash: TxHash,
     pub block_number: u64,
     pub log_number: u64,
     pub body: BlockchainEventBody,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum BlockchainEventBody {
     Supply(SupplyEventDto),
     Borrow(BorrowEventDto),
     Repay(RepayEventDto),
     Withdraw(WithdrawEventDto),
     Liquidation(LiquidationEventDto),
+    Erc20Transfer(Erc20TransferEventDto),
 }
 
 impl TryFrom<&Log> for BlockchainEvent {
@@ -59,14 +70,24 @@ impl TryFrom<&Log> for BlockchainEvent {
                     &event,
                 )?)
             }
+            IERC20::Transfer::SIGNATURE_HASH => {
+                let event = log.log_decode::<IERC20::Transfer>()?;
+                BlockchainEventBody::Erc20Transfer(
+                    Erc20TransferEventDto::try_from(&event)?,
+                )
+            }
             _ => {
                 return Err(eyre!(
                     "Can't parse Log - not supported signature"
                 ));
             }
         };
+        let transaction_hash = log.transaction_hash.ok_or_eyre(
+            "Blockchain event transaction hash must be not empty",
+        )?;
 
         Ok(BlockchainEvent {
+            transaction_hash,
             block_number: log.block_number.ok_or_eyre(
                 "Blockchain event block number must be not empty",
             )?,
@@ -80,6 +101,7 @@ impl TryFrom<&Log> for BlockchainEvent {
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct BlockchainEventPersistenceDto {
+    pub transaction_hash: Vec<u8>,
     pub block_number: i64,
     pub log_number: i32,
     pub event_type_id: i32,
@@ -90,11 +112,23 @@ impl TryInto<BlockchainEvent> for BlockchainEventPersistenceDto {
     type Error = Error;
 
     fn try_into(self) -> Result<BlockchainEvent, Self::Error> {
+        let transaction_hash: TxHash = self
+            .transaction_hash
+            .as_slice()
+            .try_into()
+            .map_err(|_| eyre!("Can't parse transaction hash"))?;
         let block_number = self.block_number as u64;
         let log_number = self.log_number as u64;
         let body: BlockchainEventBody = self.try_into()?;
 
-        Ok(BlockchainEvent { block_number, log_number, body })
+        Ok(
+            BlockchainEvent {
+                transaction_hash,
+                block_number,
+                log_number,
+                body,
+            },
+        )
     }
 }
 
@@ -116,10 +150,12 @@ impl TryInto<BlockchainEventBody> for BlockchainEventPersistenceDto {
             5 => BlockchainEventBody::Liquidation(serde_json::from_value(
                 self.body,
             )?),
+            6 => BlockchainEventBody::Erc20Transfer(serde_json::from_value(
+                self.body,
+            )?),
             _ => {
                 return Err(eyre!(
-                    "Not supported event type: {}",
-                    self.event_type_id
+                    "Can't parse BlockchainEventPersistenceDto - not supported event type id"
                 ));
             }
         })
@@ -146,9 +182,14 @@ impl TryFrom<&BlockchainEvent> for BlockchainEventPersistenceDto {
             BlockchainEventBody::Liquidation(inner) => {
                 (5, serde_json::to_value(inner)?)
             }
+            BlockchainEventBody::Erc20Transfer(inner) => {
+                (6, serde_json::to_value(inner)?)
+            }
         };
+        let transaction_hash = value.transaction_hash.to_vec();
 
         Ok(BlockchainEventPersistenceDto {
+            transaction_hash,
             block_number: value.block_number as i64,
             log_number: value.log_number as i32,
             event_type_id,

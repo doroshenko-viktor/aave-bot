@@ -15,7 +15,8 @@ pub static SETTINGS: OnceCell<Settings> = OnceCell::const_new();
 pub static ASSET_RULES: OnceCell<AssetRules> = OnceCell::const_new();
 pub static RPC_RATE_LIMITER: LazyLock<RpcRateLimiter> = LazyLock::new(|| {
     let x = RateLimiter::direct(Quota::per_second(
-        NonZeroU32::new(255).unwrap(),
+        NonZeroU32::new(SETTINGS.get().unwrap().rpc_config.max_node_credits)
+            .unwrap(),
     ));
     x
 });

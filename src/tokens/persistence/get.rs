@@ -33,7 +33,6 @@ pub async fn get_tokens(
     .map(|rec| {
         let token_address = Address::from_slice(&rec.address);
         let x = rec.total_supply.with_scale(0).to_string();
-        println!("x: {}", x);
         let total_supply = match Uint::<256, 4>::from_str(&x) {
             Ok(val) => val,
             Err(e) => {
@@ -41,12 +40,14 @@ pub async fn get_tokens(
                 panic!("Failed to parse total supply")
             }
         };
+        let a_token_address = Address::from_slice(&rec.a_token_address);
         Token::new(
             rec.id as u8,
             rec.symbol,
             token_address,
             rec.decimals as u8,
             total_supply,
+            a_token_address,
         )
     });
 
