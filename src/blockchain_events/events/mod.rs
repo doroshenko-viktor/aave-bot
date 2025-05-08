@@ -1,22 +1,16 @@
-use alloy::{
-    primitives::{TxHash, Uint},
-    rpc::types::Log,
-    sol_types::SolEvent,
+use super::{
+    borrow::BorrowEventDto, liquidation::LiquidationEventDto,
+    repay::RepayEventDto, supply::SupplyEventDto, withdraw::WithdrawEventDto,
 };
-use eyre::{Error, Ok, OptionExt, eyre};
-use serde::{Deserialize, Serialize};
-
 use crate::{
     contracts::pool::Pool,
     tokens::blockchain::{
         contracts::IERC20, erc20_transfer::Erc20TransferEventDto,
     },
 };
-
-use super::{
-    borrow::BorrowEventDto, liquidation::LiquidationEventDto,
-    repay::RepayEventDto, supply::SupplyEventDto, withdraw::WithdrawEventDto,
-};
+use alloy::{hex, primitives::TxHash, rpc::types::Log, sol_types::SolEvent};
+use eyre::{Error, Ok, OptionExt, eyre};
+use serde::{Deserialize, Serialize};
 
 pub mod event_log_parser;
 pub mod get;
@@ -101,7 +95,7 @@ impl TryFrom<&Log> for BlockchainEvent {
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct BlockchainEventPersistenceDto {
-    pub transaction_hash: Vec<u8>,
+    pub transaction_hash: String,
     pub block_number: i64,
     pub log_number: i32,
     pub event_type_id: i32,
@@ -112,11 +106,10 @@ impl TryInto<BlockchainEvent> for BlockchainEventPersistenceDto {
     type Error = Error;
 
     fn try_into(self) -> Result<BlockchainEvent, Self::Error> {
-        let transaction_hash: TxHash = self
-            .transaction_hash
-            .as_slice()
-            .try_into()
-            .map_err(|_| eyre!("Can't parse transaction hash"))?;
+        let transaction_hash = TxHash::from_slice(
+            &hex::decode(&self.transaction_hash)
+                .map_err(|_| eyre!("Can't decode transaction hash"))?,
+        );
         let block_number = self.block_number as u64;
         let log_number = self.log_number as u64;
         let body: BlockchainEventBody = self.try_into()?;
@@ -186,7 +179,7 @@ impl TryFrom<&BlockchainEvent> for BlockchainEventPersistenceDto {
                 (6, serde_json::to_value(inner)?)
             }
         };
-        let transaction_hash = value.transaction_hash.to_vec();
+        let transaction_hash = hex::encode(value.transaction_hash);
 
         Ok(BlockchainEventPersistenceDto {
             transaction_hash,

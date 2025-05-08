@@ -1,11 +1,9 @@
+mod blockchain_event_service;
 pub mod config;
+mod price_changes_handler;
 pub mod startup;
 mod tasks;
-use crate::{
-    accounts::UserAccountStore, blockchain::BlockchainDataProviderFacade,
+pub use blockchain_event_service::{
+    BlockchainEventService, BlockchainEventsAccountBalancesService,
 };
-use std::sync::Arc;
-
-// Common type aliases used thoughout application
-pub type UserAccountStoreHttpRef<T: BlockchainDataProviderFacade> =
-    Arc<UserAccountStore<T>>;
+pub use price_changes_handler::PriceChangesHandler;

@@ -13,11 +13,13 @@ pub mod clients;
 pub mod configuration;
 pub mod contracts;
 pub mod errors;
+pub mod operational;
 pub mod price_feed;
 pub mod setup;
 pub mod shared;
 pub mod tokens;
 pub mod utils;
+pub mod web_api;
 
 pub type NodeWsProvider = FillProvider<
     JoinFill<

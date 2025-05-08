@@ -1,4 +1,7 @@
-use crate::{configuration::globals::get_db_pool, utils::datetime::chrono_to_primitive_datetime};
+use crate::{
+    configuration::globals::get_db_pool,
+    utils::datetime::chrono_to_primitive_datetime,
+};
 
 use chrono::Utc;
 use eyre::Result;

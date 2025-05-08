@@ -135,6 +135,63 @@ pub fn get_placeholders_str(
     placeholders.join(",")
 }
 
+pub struct CustomPlaceholder {
+    pub placeholder_prefix: String,
+    pub placeholder_postfix: String,
+}
+impl CustomPlaceholder {
+    pub fn new(
+        placeholder_prefix: String,
+        placeholder_postfix: String,
+    ) -> Self {
+        Self { placeholder_prefix, placeholder_postfix }
+    }
+
+    pub fn get_placeholder(&self, index: usize) -> String {
+        format!(
+            "{}${}{}",
+            self.placeholder_prefix, index, self.placeholder_postfix
+        )
+    }
+    pub fn length(&self) -> usize {
+        self.placeholder_prefix.len() + self.placeholder_postfix.len() + 3
+    }
+}
+
+pub fn get_custom_placeholders_str(
+    custom_placeholders: Vec<Option<CustomPlaceholder>>,
+    rows_amount: usize,
+) -> String {
+    let mut ind = 0;
+    let mut placeholders = Vec::<String>::with_capacity(rows_amount);
+
+    let min_line_length: usize = custom_placeholders
+        .iter()
+        .map(
+            |x| {
+                if let Some(p) = x { p.length() } else { 3 }
+            },
+        )
+        .sum();
+    let mut x = Vec::<String>::with_capacity(min_line_length);
+
+    for _ in 0..rows_amount {
+        for placeholder in &custom_placeholders {
+            ind += 1;
+            match placeholder {
+                Some(p) => x.push(p.get_placeholder(ind)),
+                None => x.push(format!("${}", ind)),
+            };
+        }
+        let cur_placeholder = x.join(",");
+        placeholders.push(format!("({})", cur_placeholder));
+
+        x.clear();
+    }
+
+    placeholders.join(",")
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::get_placeholders_str;

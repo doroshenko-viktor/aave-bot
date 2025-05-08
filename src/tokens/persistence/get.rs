@@ -41,6 +41,11 @@ pub async fn get_tokens(
             }
         };
         let a_token_address = Address::from_slice(&rec.a_token_address);
+        let variable_debt_token =
+            Address::from_slice(&rec.variable_debt_token_address);
+        let stable_debt_token =
+            Address::from_slice(&rec.stable_debt_token_address);
+
         Token::new(
             rec.id as u8,
             rec.symbol,
@@ -48,6 +53,8 @@ pub async fn get_tokens(
             rec.decimals as u8,
             total_supply,
             a_token_address,
+            variable_debt_token,
+            stable_debt_token,
         )
     });
 

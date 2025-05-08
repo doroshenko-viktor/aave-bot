@@ -1,5 +1,4 @@
 use crate::accounts::{self, UserAccountStore};
-use crate::blockchain::BlockchainDataProviderFacade;
 use crate::{
     blockchain_events::events::BlockchainEvent, tokens::entities::Token,
 };
@@ -8,22 +7,22 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::Receiver;
 
+use super::BlockchainEventService;
+use super::price_changes_handler::PriceChangesHandler;
+
 /**
 Handle asset price changes invoking liquidation if price change will affect some account becomes unhealthy
  */
 pub async fn spawn_handling_price_changes<T>(
-    user_account_store: Arc<UserAccountStore<T>>,
+    price_change_handler: T,
     mut changed_price_token_rx: Receiver<&'static Token>,
 ) -> Result<()>
 where
-    T: BlockchainDataProviderFacade + Send + Sync + 'static,
+    T: PriceChangesHandler + Send + Sync + 'static,
 {
     tokio::spawn(async move {
         while let Some(token) = changed_price_token_rx.recv().await {
-            let accounts_to_liquidate = user_account_store
-                .get_accounts_to_liquidate_on_price_change(token.get_id())
-                .await;
-            // TODO: call liquidation functionality
+            price_change_handler.handle_price_change(token).await;
         }
     });
 
@@ -34,11 +33,11 @@ where
 Handle blockchain events from AAVE maintaining account balances.
 */
 pub async fn start_handling_account_state_changes<T>(
-    user_data_store: Arc<UserAccountStore<T>>,
+    user_data_store: T,
     mut blockchain_events_rx: Receiver<BlockchainEvent>,
 ) -> Result<()>
 where
-    T: BlockchainDataProviderFacade + Send + Sync + 'static,
+    T: BlockchainEventService + Send + Sync + 'static,
 {
     while let Some(event) = blockchain_events_rx.recv().await {
         user_data_store.handle_event(event).await;
@@ -55,12 +54,10 @@ Note: Account data is not saved to the database on each event arrival to optimiz
 
 This approach will not lead to improper account values even if the application is stopped some time after the last backup. On the next run, the account store will be recalculated starting from the stored block ID, and any data not included in the backup will be retrieved from the blockchain again.
 */
-pub fn spawn_user_accounts_store_backup_task<T>(
-    user_data_store: Arc<UserAccountStore<T>>,
+pub fn spawn_user_accounts_store_backup_task(
+    user_data_store: Arc<UserAccountStore>,
     period: Duration,
-) where
-    T: BlockchainDataProviderFacade + Send + Sync + 'static,
-{
+) {
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(period).await;
@@ -78,12 +75,10 @@ While continuously checking the health factor on every AAVE and price event woul
 
 On each new price change, we only examine this shortlist. It is improbable that accounts not currently on the shortlist would become unhealthy faster than this background task can re-evaluate their health in its next cycle.
 */
-pub fn spawn_low_hf_accounts_refresh_task<T>(
-    user_account_store: Arc<UserAccountStore<T>>,
+pub fn spawn_low_hf_accounts_refresh_task(
+    user_account_store: Arc<UserAccountStore>,
     period: Duration,
-) where
-    T: BlockchainDataProviderFacade + Send + Sync + 'static,
-{
+) {
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(period).await;

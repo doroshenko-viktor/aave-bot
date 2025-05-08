@@ -465,7 +465,6 @@ pub async fn handle_downloaded_historical_events(
     last_downloaded_block_number: u64,
 ) -> Result<()> {
     let mut current_offset = 0;
-    let mut total = 0;
     let limit = 1000;
     loop {
         let events = get_events_paginated(
@@ -484,11 +483,7 @@ pub async fn handle_downloaded_historical_events(
         }
 
         for event in events {
-            if total > 10 {
-                break;
-            }
             result_tx.send(event).await?;
-            total += 1;
         }
     }
 

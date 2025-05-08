@@ -1,6 +1,5 @@
 pub mod globals;
 pub mod persistent_config;
-pub mod tokens;
 use config::{Config, ConfigError, Environment, File};
 use eyre::eyre;
 use eyre::{Error, Ok, Result};
@@ -71,6 +70,7 @@ pub struct PostgresConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct RpcProviderConfig {
     pub max_node_credits: u32,
+    pub max_node_burst_size: u32,
     pub max_blockchain_retry_count: u8,
     pub node_url: String,
     pub node_ws_url: String,

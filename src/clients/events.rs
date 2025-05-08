@@ -8,7 +8,7 @@ use alloy::{
 };
 use eyre::Result;
 use tokio::sync::mpsc::Receiver;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     NodeWsProvider,
@@ -33,14 +33,14 @@ pub async fn get_event_logs(
         ])
         .from_block(BlockNumberOrTag::Number(index_low))
         .to_block(BlockNumberOrTag::Number(index_high));
-    globals::RPC_RATE_LIMITER
-        .until_n_ready(NonZero::new(255).unwrap())
-        .await
-        .map_err(eyre::Report::from)?;
-    debug!(
+    warn!(
         "Requesting portion of event logs between blocks: {} - {}",
         index_low, index_high
     );
+    globals::RPC_RATE_LIMITER
+        .until_n_ready(NonZero::new(455).unwrap())
+        .await
+        .map_err(eyre::Report::from)?;
     match provider.get_logs(&filter).await {
         Ok(logs) => Ok(logs),
         Err(alloy::transports::RpcError::ErrorResp(error_payload)) => {

@@ -14,10 +14,20 @@ pub static DB_POOL: OnceCell<DbPool> = OnceCell::const_new();
 pub static SETTINGS: OnceCell<Settings> = OnceCell::const_new();
 pub static ASSET_RULES: OnceCell<AssetRules> = OnceCell::const_new();
 pub static RPC_RATE_LIMITER: LazyLock<RpcRateLimiter> = LazyLock::new(|| {
-    let x = RateLimiter::direct(Quota::per_second(
-        NonZeroU32::new(SETTINGS.get().unwrap().rpc_config.max_node_credits)
+    let x = RateLimiter::direct(
+        Quota::per_second(
+            NonZeroU32::new(
+                SETTINGS.get().unwrap().rpc_config.max_node_credits,
+            )
             .unwrap(),
-    ));
+        )
+        .allow_burst(
+            NonZeroU32::new(
+                SETTINGS.get().unwrap().rpc_config.max_node_burst_size,
+            )
+            .unwrap(),
+        ),
+    );
     x
 });
 

@@ -26,9 +26,10 @@ Repay event - first block 16497341
 
 ## TODO
 
+- TODO: handle useATokens in repay - burst corresponding aToken amount
 - // TODO: move token
   // reference to event_body and find token on event deserialization
-
+- change transaction hash in db to be string
 - allow instant negative balances because it may be caused by invalid log order and correct balances are forced by aave anyway
 - save account state daily and recaluclate it starting last day's state by historic day events to keep valid state event if events were received not in right order
 - track ReserveDataUpdated
@@ -41,6 +42,21 @@ Repay event - first block 16497341
   this function will call compute function for user account balances and in another thread will save new events to db
 
 ## Notes
+
+1 => {
+BlockchainEventBody::Supply(serde_json::from_value(self.body)?)
+}
+2 => {
+BlockchainEventBody::Borrow(serde_json::from_value(self.body)?)
+}
+3 => BlockchainEventBody::Repay(serde_json::from_value(self.body)?),
+4 => BlockchainEventBody::Withdraw(serde_json::from_value(
+self.body,
+)?),
+5 => BlockchainEventBody::Liquidation(serde_json::from_value(
+self.body,
+)?),
+6 => BlockchainEventBody::Erc20Transfer(serde_json::from_value(
 
 need to collect user balances, which will be updated by
 
@@ -63,10 +79,6 @@ if liquidation was not successful, check why: it may be possible that price from
 
 `cargo llvm-cov --open` - to open coverage report in browser
 
-```
+## AAVE
 
-```
-
-```
-
-```
+[Deployed Contracts](https://aave.com/docs/resources/addresses)

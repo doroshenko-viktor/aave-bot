@@ -1,7 +1,9 @@
 use crate::{
     accounts::{AccountCollateralDto, AccountDebtDto, AccountInsertDto},
     blockchain::BlockchainDataProviderFacade,
-    configuration::globals::get_db_pool,
+    configuration::{
+        config_set, globals::get_db_pool, persistent_config::ConfigurationKey,
+    },
     shared::persistence::{DbPool, get_placeholders_str},
     tokens::token_service,
     utils::uint_ext::UintExt,
@@ -9,16 +11,14 @@ use crate::{
 use eyre::Result;
 use futures::future::join_all;
 use sqlx::{Postgres, Transaction};
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use super::UserAccountStore;
 
-pub async fn backup_user_data_store<'a, T>(
-    user_account_store: &'a UserAccountStore<T>,
-) -> Result<()>
-where
-    T: BlockchainDataProviderFacade,
-{
+pub async fn backup_user_data_store<'a>(
+    user_account_store: &'a UserAccountStore,
+) -> Result<()> {
+    info!("Backing up user data store...");
     let pool: &DbPool = get_db_pool();
 
     let (accounts, collaterals, debts) = join_all(
@@ -49,6 +49,7 @@ where
                         account_address: account.address.to_checksum(None),
                         token_symbol: token.get_symbol(),
                         amount: debt.amount.to_decimal(),
+                        debt_token_amount: debt.debt_token_amount.to_decimal(),
                     }
                 })
                 .collect();
@@ -84,6 +85,12 @@ where
             e
         );
     };
+    info!("Saving last user balances block...");
+    config_set(
+        ConfigurationKey::LastUserBalancesBlock,
+        &user_account_store.get_last_block_number().to_string(),
+    )
+    .await?;
 
     Ok(())
 }
@@ -152,7 +159,10 @@ pub async fn save_collaterals(
     query_builder.push_str(
         r#"
         ON CONFLICT (account_address, token_symbol) 
-        DO UPDATE SET amount = excluded.amount"#,
+        DO UPDATE SET 
+            amount = excluded.amount,
+            a_token_amount = excluded.a_token_amount
+        "#,
     );
     let mut query = sqlx::query(&query_builder);
 
@@ -176,16 +186,20 @@ pub async fn save_debts(
         INSERT INTO operational.account_debts (
             account_address,
             token_symbol,
-            amount
+            amount,
+            debt_token_amount
         ) VALUES "#
         .to_string();
 
-    let placeholders = get_placeholders_str(3, debts.len());
+    let placeholders = get_placeholders_str(4, debts.len());
     query_builder.push_str(&placeholders);
     query_builder.push_str(
         r#"
         ON CONFLICT (account_address, token_symbol) 
-        DO UPDATE SET amount = excluded.amount"#,
+        DO UPDATE SET 
+            amount = excluded.amount,
+            debt_token_amount = excluded.debt_token_amount
+        "#,
     );
     let mut query = sqlx::query(&query_builder);
 
@@ -193,7 +207,8 @@ pub async fn save_debts(
         query = query
             .bind(debt.account_address)
             .bind(debt.token_symbol)
-            .bind(debt.amount);
+            .bind(debt.amount)
+            .bind(debt.debt_token_amount);
     }
     let _ = query.execute(tx.as_mut()).await?;
 

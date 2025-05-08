@@ -1,6 +1,8 @@
+pub mod api;
 pub mod asset_rules_aggregator;
 pub mod blockchain;
 pub mod blockchain_client;
+pub mod dto;
 pub mod entities;
 pub mod persistence;
 pub mod token_service;

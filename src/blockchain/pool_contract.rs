@@ -24,6 +24,15 @@ pub trait AavePoolContract {
         block_number: u64,
     ) -> impl Future<Output = Result<Uint<256, 4>, BlockchainContractCallError>>;
 
+    /**
+     * Get valuation of borrowd variable debt token
+     */
+    fn get_debt_token_normalized_income(
+        &self,
+        token_address: TokenAddress,
+        block_number: u64,
+    ) -> impl Future<Output = Result<Uint<256, 4>, BlockchainContractCallError>>;
+
     fn get_native_token_valuation(
         &self,
         token_address: TokenAddress,
@@ -32,6 +41,13 @@ pub trait AavePoolContract {
     ) -> impl Future<Output = Result<AssetAmount, BlockchainContractCallError>>;
 
     fn get_a_token_valuation(
+        &self,
+        token_address: TokenAddress,
+        native_amount: Uint<256, 4>,
+        block_number: u64,
+    ) -> impl Future<Output = Result<AssetAmount, BlockchainContractCallError>>;
+
+    fn get_scaled_borrow_balance(
         &self,
         token_address: TokenAddress,
         native_amount: Uint<256, 4>,
@@ -56,20 +72,20 @@ impl AavePoolContractBlockchainImpl {
 impl AavePoolContract for AavePoolContractBlockchainImpl {
     async fn get_native_token_valuation(
         &self,
-        token_address: TokenAddress,
+        a_token_address: TokenAddress,
         a_token_amount: Uint<256, 4>,
         block_number: u64,
     ) -> Result<Uint<256, 4>, BlockchainContractCallError> {
         let normalized_income = self
-            .get_reserve_token_normalized_income(token_address, block_number)
+            .get_reserve_token_normalized_income(a_token_address, block_number)
             .await?;
 
         let ray = U256::from(RAY);
 
         Ok(a_token_amount
-            .checked_mul(ray)
+            .checked_mul(normalized_income)
             .unwrap()
-            .checked_div(normalized_income)
+            .checked_div(ray)
             .unwrap())
     }
 
@@ -82,13 +98,17 @@ impl AavePoolContract for AavePoolContractBlockchainImpl {
         let normalized_income = self
             .get_reserve_token_normalized_income(token_address, block_number)
             .await?;
+        error!(
+            "normalized_income: {:?}; token_address: {:#x}; block_number: {:?}",
+            normalized_income, token_address, block_number
+        );
 
         let ray = U256::from(RAY);
 
         let result = native_amount
-            .checked_mul(normalized_income)
+            .checked_mul(ray)
             .unwrap() // TODO: make error handling
-            .checked_div(ray)
+            .checked_div(normalized_income)
             .unwrap();
 
         Ok(result)
@@ -105,5 +125,37 @@ impl AavePoolContract for AavePoolContractBlockchainImpl {
             .call()
             .await
             .map_err(|err| err.into())
+    }
+
+    async fn get_debt_token_normalized_income(
+        &self,
+        token_address: TokenAddress,
+        block_number: u64,
+    ) -> Result<Uint<256, 4>, BlockchainContractCallError> {
+        self.pool
+            .getReserveNormalizedVariableDebt(token_address)
+            .block(BlockId::number(block_number))
+            .call()
+            .await
+            .map_err(|err| err.into())
+    }
+
+    async fn get_scaled_borrow_balance(
+        &self,
+        token_address: TokenAddress,
+        native_amount: Uint<256, 4>,
+        block_number: u64,
+    ) -> Result<AssetAmount, BlockchainContractCallError> {
+        let normalized_income = self
+            .get_debt_token_normalized_income(token_address, block_number)
+            .await?;
+        let ray = U256::from(RAY);
+        let result = native_amount
+            .checked_mul(ray)
+            .unwrap()
+            .checked_div(normalized_income)
+            .unwrap();
+
+        Ok(result)
     }
 }

@@ -1,17 +1,18 @@
 use crate::{
     accounts::types::AssetAmount,
     configuration::globals,
+    operational::aave_events::AaveAccountMovement,
     price_feed::prices_aggregator,
     shared::persistence::AccountAddress,
     tokens::{entities::Token, token_service, types::TokenId},
-    utils::uint_ext::UintExt,
 };
 use alloy::primitives::Uint;
 use eyre::{Result, eyre};
 use hashbrown::{HashMap, hash_map::Entry};
-use serde::de;
 use std::{collections::HashSet, sync::Arc};
 use tracing::{debug, error, info, warn};
+
+const PRECISION: u32 = 100;
 
 pub type UserAccountRef = Arc<tokio::sync::RwLock<UserAccount>>;
 
@@ -30,11 +31,12 @@ impl Collateral {
 #[derive(Debug, Clone, Copy)]
 pub struct Debt {
     pub amount: AssetAmount,
+    pub debt_token_amount: AssetAmount,
 }
 
 impl Debt {
-    pub fn new(amount: AssetAmount) -> Self {
-        Self { amount }
+    pub fn new(amount: AssetAmount, debt_token_amount: AssetAmount) -> Self {
+        Self { amount, debt_token_amount }
     }
 }
 
@@ -155,21 +157,16 @@ impl UserAccount {
             .map(|(token_id, debt)| (*token_id, debt.amount)) // TODO: check if amount vs a_tokenamount 
     }
 
-    pub fn supply(
-        &mut self,
-        token_id: TokenId,
-        amount: Uint<256, 4>,
-        a_token_amount: Uint<256, 4>,
-    ) {
+    pub fn supply(&mut self, token: &Token, data: &AaveAccountMovement) {
         self.collaterals
-            .entry(token_id)
+            .entry(token.id)
             .and_modify(|val| {
                 info!(
                     "Existing collateral amount {}",
                     val.amount
                 );
-                val.amount += &amount;
-                val.a_token_amount += &a_token_amount;
+                val.amount += &data.native_token_amount;
+                val.a_token_amount += &data.reserve_token_amount;
                 info!(
                     "Updated collateral amount {}",
                     val.amount
@@ -178,27 +175,30 @@ impl UserAccount {
             .or_insert_with(|| {
                 debug!(
                     "Adding collateral with init amount {}",
-                    amount
+                    data.native_token_amount
                 );
-                Collateral { amount, a_token_amount }
+                Collateral::new(
+                    data.native_token_amount,
+                    data.reserve_token_amount,
+                )
             });
     }
 
     pub fn borrow(
         &mut self,
         token: &Token,
-        amount: Uint<256, 4>,
+        event_body: &AaveAccountMovement,
     ) -> Result<()> {
         #[cfg(debug_assertions)]
         {
             if self.collaterals.is_empty() {
                 info!("{:#?}", self.collaterals);
-                error!(
+                return Err(eyre!(
                     "Borrowing {} {} for address {} with no collateral",
-                    token.get_repr(amount)?,
-                    token.id,
+                    token.get_repr(event_body.native_token_amount)?,
+                    token.get_symbol(),
                     self.address
-                );
+                ));
             }
         }
         self.debts
@@ -208,7 +208,8 @@ impl UserAccount {
                     "Initial debt amount {}",
                     token.get_repr(val.amount).unwrap()
                 );
-                val.amount += &amount;
+                val.amount += &event_body.native_token_amount;
+                val.debt_token_amount += &event_body.reserve_token_amount;
                 info!(
                     "Updated debt amount {}",
                     token.get_repr(val.amount).unwrap()
@@ -217,9 +218,12 @@ impl UserAccount {
             .or_insert_with(|| {
                 debug!(
                     "Adding debt with init amount {}",
-                    token.get_repr(amount).unwrap()
+                    token.get_repr(event_body.native_token_amount).unwrap()
                 );
-                Debt { amount }
+                Debt::new(
+                    event_body.native_token_amount,
+                    event_body.reserve_token_amount,
+                )
             });
 
         Ok(())
@@ -228,21 +232,37 @@ impl UserAccount {
     pub fn withdraw(
         &mut self,
         token: &Token,
-        amount: Uint<256, 4>,
-        a_token_amount: Uint<256, 4>,
+        event_data: &AaveAccountMovement,
     ) -> Result<()> {
         match self.collaterals.entry(token.id) {
             Entry::Occupied(mut val) => {
                 let val = val.get_mut();
                 // TODO: check if amount is not more than available
                 info!(
-                    "Initial collateral amount {}",
-                    token.get_repr(val.amount)?
+                    "Initial collateral reserve token amount {}",
+                    token.get_repr(val.a_token_amount)?
                 );
-                val.amount -= &amount;
-                val.a_token_amount -= &a_token_amount;
+                if val.amount < event_data.native_token_amount {
+                    val.amount = Uint::from(0);
+                } else {
+                    val.amount -= &event_data.native_token_amount;
+                }
+
+                let precision = Uint::from(PRECISION); // TODO: optimization-move to constants...
+                if val.a_token_amount
+                    < event_data.reserve_token_amount - precision
+                {
+                    return Err(eyre::eyre!(
+                        "Withdrawal of {} reserve token is less than balance({})",
+                        event_data.reserve_token_amount,
+                        val.a_token_amount
+                    ));
+                } else {
+                    val.a_token_amount -= &event_data.reserve_token_amount;
+                }
                 info!(
-                    "Updated collateral amount {}",
+                    "Withdraw updated a-token-amount: {}; collateral amount {}",
+                    token.get_repr(val.a_token_amount)?,
                     token.get_repr(val.amount)?
                 );
                 Ok(())
@@ -255,7 +275,11 @@ impl UserAccount {
         }
     }
 
-    pub fn repay(&mut self, token: &Token, amount: Uint<256, 4>) -> Result<()> {
+    pub fn repay(
+        &mut self,
+        token: &Token,
+        event_body: &AaveAccountMovement,
+    ) -> Result<()> {
         let asset = if let Some(asset) = self.debts.get_mut(&token.id) {
             asset
         } else {
@@ -266,12 +290,30 @@ impl UserAccount {
         };
 
         info!(
-            "Initial debt amount {}",
+            "Initial debt_token_amount: {}; debt amount {}",
+            token.get_repr(asset.debt_token_amount)?,
             token.get_repr(asset.amount)?
         );
-        asset.amount -= amount;
+        let precision = Uint::from(PRECISION); // TODO: optimization-move to constants...
+        if asset.debt_token_amount < event_body.reserve_token_amount - precision
+        {
+            return Err(eyre!(
+                "Debt amount {} is less than {}",
+                token.get_repr(asset.debt_token_amount)?,
+                token.get_repr(event_body.reserve_token_amount)?
+            ));
+        }
+        asset.debt_token_amount -= event_body.reserve_token_amount;
+
+        if asset.amount < event_body.native_token_amount {
+            asset.amount = Uint::from(0);
+        } else {
+            asset.amount -= event_body.native_token_amount;
+        }
+
         info!(
-            "Updated debt amount {}",
+            "Updated debt_token_amount: {}; debt amount {}",
+            token.get_repr(asset.debt_token_amount)?,
             token.get_repr(asset.amount)?
         );
 
@@ -280,13 +322,12 @@ impl UserAccount {
 
     pub fn liquidate(
         &mut self,
-        debt_token_id: TokenId,
-        collateral_token_id: TokenId,
-        debt_to_cover: AssetAmount,
-        liquidated_collateral_amount: AssetAmount,
-        a_token_liquidated_amount: AssetAmount,
+        liqudation_repay_debt: &AaveAccountMovement,
+        liquidation_withdraw_collateral: &AaveAccountMovement,
     ) -> Result<()> {
-        let debt = if let Some(debt) = self.debts.get_mut(&debt_token_id) {
+        let debt = if let Some(debt) =
+            self.debts.get_mut(&liqudation_repay_debt.token.id)
+        {
             debt
         } else {
             return Err(eyre!(
@@ -294,8 +335,9 @@ impl UserAccount {
             ));
         };
 
-        let collateral = if let Some(collateral) =
-            self.collaterals.get_mut(&collateral_token_id)
+        let collateral = if let Some(collateral) = self
+            .collaterals
+            .get_mut(&liquidation_withdraw_collateral.token.id)
         {
             collateral
         } else {
@@ -304,47 +346,71 @@ impl UserAccount {
             ));
         };
 
-        debt.amount = debt.amount - debt_to_cover;
-        collateral.amount = collateral.amount - liquidated_collateral_amount;
-        collateral.a_token_amount =
-            collateral.a_token_amount - a_token_liquidated_amount;
+        if debt.debt_token_amount < liqudation_repay_debt.reserve_token_amount {
+            return Err(eyre!(
+                "Debt amount {} is less than {}",
+                debt.debt_token_amount,
+                liqudation_repay_debt.reserve_token_amount
+            ));
+        }
+        if collateral.a_token_amount
+            < liquidation_withdraw_collateral.reserve_token_amount
+        {
+            return Err(eyre!(
+                "Collateral amount {} is less than {}",
+                collateral.a_token_amount,
+                liquidation_withdraw_collateral.reserve_token_amount
+            ));
+        }
+
+        debt.amount -= liqudation_repay_debt.native_token_amount;
+        debt.debt_token_amount -= liqudation_repay_debt.reserve_token_amount;
+        collateral.amount -=
+            liquidation_withdraw_collateral.native_token_amount;
+        collateral.a_token_amount -=
+            liquidation_withdraw_collateral.reserve_token_amount;
 
         Ok(())
     }
 
     pub fn handle_transfer_out(
         &mut self,
-        token: &Token,
-        amount_subtracted: AssetAmount,
-        a_token_amount_subtracted: AssetAmount,
+        event: &AaveAccountMovement,
     ) -> Result<()> {
-        match self.collaterals.entry(token.get_id()) {
+        match self.collaterals.entry(event.token.id) {
             Entry::Occupied(mut entry) => {
                 let val = entry.get_mut();
+                let token = event.token;
                 info!(
-                    "Initial asset amount {} {}",
-                    token.get_repr(val.amount)?,
+                    "INITIAL a-token-amount {} {}; subtracted a-token-amount {}",
+                    event.token.get_repr(val.a_token_amount)?,
                     token.get_symbol(),
+                    event.get_reserve_normalized_amount()?
                 );
-                if val.amount < amount_subtracted {
-                    Err(eyre::eyre!(
+                if val.a_token_amount < event.reserve_token_amount {
+                    return Err(eyre::eyre!(
                         "Collateral of {} for account '{}' is not enough",
                         token,
                         self.address
-                    ))
-                } else {
-                    val.amount -= amount_subtracted;
-                    val.a_token_amount -= a_token_amount_subtracted;
-                    info!(
-                        "Updated collateral amount {}",
-                        token.get_repr(val.amount)?
-                    );
-                    Ok(())
+                    ));
                 }
+
+                val.a_token_amount -= event.reserve_token_amount;
+                if val.amount < event.native_token_amount {
+                    val.amount = Uint::from(0);
+                } else {
+                    val.amount -= event.native_token_amount;
+                }
+                info!(
+                    "Updated collateral a-token-amount: {} amount {}",
+                    token.get_repr(val.a_token_amount)?,
+                    token.get_repr(val.amount)?
+                );
+                Ok(())
             }
             Entry::Vacant(_) => Err(eyre::eyre!(
                 "Collateral of token: {} for account '{:#x}' not found",
-                token.get_symbol(),
+                event.token.get_symbol(),
                 self.address
             )),
         }
@@ -352,27 +418,28 @@ impl UserAccount {
 
     pub fn handle_transfer_in(
         &mut self,
-        token: &Token,
-        amount: AssetAmount,
-        a_token_amount: AssetAmount,
+        event: &AaveAccountMovement,
     ) -> Result<()> {
-        match self.collaterals.entry(token.id) {
+        match self.collaterals.entry(event.token.id) {
             Entry::Occupied(mut entry) => {
                 let val = entry.get_mut();
-                val.amount += amount;
-                val.a_token_amount += a_token_amount;
+                val.amount += event.native_token_amount;
+                val.a_token_amount += event.reserve_token_amount;
                 info!(
                     "Updated collateral amount {} {}",
-                    token.get_repr(val.amount)?,
+                    event.token.get_repr(val.amount)?,
                     self.address,
                 );
             }
             Entry::Vacant(entry) => {
                 warn!(
                     "Collateral with token_id: {} for account '{}' not found. Creating new account.",
-                    token.id, self.address
+                    event.token.id, self.address
                 );
-                entry.insert(Collateral { amount, a_token_amount });
+                entry.insert(Collateral::new(
+                    event.native_token_amount,
+                    event.reserve_token_amount,
+                ));
             }
         };
 

@@ -1,4 +1,3 @@
-use super::account_store_builder::AccountStoreBuilder;
 use crate::accounts::entities::{
     Collateral, Debt, UserAccount, UserAccountRef,
 };
@@ -7,13 +6,17 @@ use crate::configuration::persistent_config::{ConfigurationKey, config_get};
 use crate::shared::persistence::{AccountAddress, DbPool};
 use crate::tokens::token_service;
 use crate::utils::uint_ext::DecimalExt;
-use alloy::primitives::{Address, Uint};
+use alloy::primitives::Address;
 use dashmap::DashMap;
 use eyre::Result;
 use hashbrown::HashMap;
+use hashbrown::hash_map::Entry;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::{debug, error};
+
+use super::UserAccountStore;
 
 pub async fn get_accounts(pool: &DbPool) -> Result<Vec<AccountAddress>> {
     Ok(sqlx::query!(
@@ -62,7 +65,8 @@ pub async fn get_debts(pool: &DbPool) -> Result<Vec<AccountDebtDto>> {
         select 
             account_address, 
             token_symbol, 
-            amount
+            amount,
+            debt_token_amount
         from operational.account_debts
     "#
     )
@@ -74,7 +78,7 @@ pub async fn get_debts(pool: &DbPool) -> Result<Vec<AccountDebtDto>> {
 
 pub async fn restore_user_account_store(
     pool: &DbPool,
-) -> Result<AccountStoreBuilder> {
+) -> Result<UserAccountStore> {
     let mut collaterals_by_account_address =
         get_collaterals(pool).await?.into_iter().fold(
             HashMap::<AccountAddress, Vec<AccountCollateralDto>>::new(),
@@ -84,11 +88,14 @@ pub async fn restore_user_account_store(
                         "Expected to receive a valid account address from db",
                     ),
                 );
-                res.entry(address)
-                    .and_modify(|accounts| {
-                        accounts.push(cur);
-                    })
-                    .or_insert_with(|| Vec::new());
+                match res.entry(address) {
+                    Entry::Occupied(mut entry) => {
+                        entry.get_mut().push(cur);
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(vec![cur]);
+                    }
+                };
                 res
             },
         );
@@ -101,14 +108,18 @@ pub async fn restore_user_account_store(
                     "Expected to receive a valid account address from db",
                 ),
             );
-            res.entry(address)
-                .and_modify(|accounts| {
-                    accounts.push(cur);
-                })
-                .or_insert_with(|| Vec::new());
+            match res.entry(address) {
+                Entry::Occupied(mut entry) => {
+                    entry.get_mut().push(cur);
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(vec![cur]);
+                }
+            };
             res
         },
     );
+
     let accounts = get_accounts(pool).await?;
 
     let accounts: DashMap<AccountAddress, UserAccountRef> =
@@ -117,7 +128,7 @@ pub async fn restore_user_account_store(
             |res, account_address| {
                 let collaterals = collaterals_by_account_address
                     .remove(&account_address)
-                    .unwrap_or_else(|| Vec::new())
+                    .unwrap_or(Vec::new())
                     .into_iter()
                     .fold(HashMap::new(), |mut res, cur| {
                         let token = token_service::get_token_by_symbol(
@@ -135,7 +146,7 @@ pub async fn restore_user_account_store(
                     });
                 let debts = debts_by_account_address
                     .remove(&account_address)
-                    .unwrap_or_else(|| Vec::new())
+                    .unwrap_or(Vec::new())
                     .into_iter()
                     .fold(HashMap::new(), |mut res, cur| {
                         let token = token_service::get_token_by_symbol(
@@ -143,7 +154,10 @@ pub async fn restore_user_account_store(
                         );
                         res.insert(
                             token.get_id(),
-                            Debt::new(cur.amount.to_uint().unwrap()),
+                            Debt::new(
+                                cur.amount.to_uint().unwrap(),
+                                cur.debt_token_amount.to_uint().unwrap(),
+                            ),
                         );
                         res
                     });
@@ -165,8 +179,8 @@ pub async fn restore_user_account_store(
         config_get(ConfigurationKey::LastUserBalancesBlock)
             .await?
             .parse()?;
-    Ok(AccountStoreBuilder::new(
-        last_user_balances_block_number,
+    Ok(UserAccountStore::new(
         accounts,
+        last_user_balances_block_number,
     ))
 }

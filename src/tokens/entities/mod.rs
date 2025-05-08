@@ -1,9 +1,8 @@
-use crate::accounts::types::AssetAmount;
-
 use super::{TokenSymbol, types::TokenId};
+use crate::accounts::types::AssetAmount;
 use alloy::primitives::{Address, Uint};
 use eyre::Result;
-use std::{fmt::Display, str::FromStr};
+use std::fmt::Display;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Token {
@@ -13,6 +12,8 @@ pub struct Token {
     pub decimals: u8,
     pub total_supply: Uint<256, 4>,
     pub a_token_address: Address,
+    pub variable_debt_token_address: Address,
+    pub stable_debt_token_address: Address,
 }
 
 impl Token {
@@ -23,6 +24,8 @@ impl Token {
         decimals: u8,
         total_supply: Uint<256, 4>,
         a_token_address: Address,
+        variable_debt_token_address: Address,
+        stable_debt_token_address: Address,
     ) -> Self {
         Self {
             id,
@@ -31,6 +34,8 @@ impl Token {
             decimals,
             total_supply,
             a_token_address,
+            variable_debt_token_address,
+            stable_debt_token_address,
         }
     }
 

@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use serde::Deserialize;
 
 use crate::{accounts::AccountsConfig, price_feed::PriceFeedConfig};
@@ -11,10 +9,10 @@ pub struct AppConfig {
     pub accounts: AccountsConfig,
 }
 
-impl Deref for AppConfig {
-    type Target = PriceFeedConfig;
-
-    fn deref(&self) -> &Self::Target {
-        &self.price_feed
+impl From<&AppConfig> for PriceFeedConfig {
+    fn from(value: &AppConfig) -> Self {
+        Self {
+            bybit_spot_url: value.price_feed.bybit_spot_url.clone(),
+        }
     }
 }
