@@ -13,6 +13,10 @@ export APP_MODE=[dev|prod|stage|test]
 
 Then run the application:
 
+```bash
+cargo watch -q -x "run --bin web_api --features dev"
+```
+
 ## Links
 
 [Smart contracts docs](https://aave.com/docs/developers/smart-contracts)
@@ -26,6 +30,7 @@ Repay event - first block 16497341
 
 ## TODO
 
+- create mechanism to get transactions from blockchain if I don't have it and batch download and provide transactions to code when it's historical
 - TODO: handle useATokens in repay - burst corresponding aToken amount
 - // TODO: move token
   // reference to event_body and find token on event deserialization

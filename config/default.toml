@@ -25,3 +25,4 @@ aave_v3_pool_data_provider_address = "0x497a1994c46d4f6C864904A9f1fac6328Cb7C8a6
 aave_v3_wrapped_token_gateway_address = "0xD322A49006FC828F9B5B37Ab215F99B4E5caB19C"
 aave_v3_paraswap_liquidity_swap_address = "0x872fBcb1B582e8Cd0D0DD4327fBFa0B4C2730995"
 aave_v3_paraswap_repay_adapter_address = "0x1809f186d680f239420b56948c58f8dbbcdf1e18"
+ds_proxy_address = "0xe6d748064369c594f0a7efbe71fddbe72af5305d"

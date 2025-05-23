@@ -10,7 +10,7 @@ use tracing::info;
 
 use crate::shared::persistence::{DbPool, get_placeholders_str};
 
-pub type BlockNumber = BigDecimal;
+pub type BlockNumber = u64;
 pub type BlockDbId = i32;
 pub type BlockDatabaseIds = HashMap<BlockNumber, BlockDbId>;
 
@@ -90,40 +90,41 @@ struct BlockInsertResult {
     block_number: BigDecimal,
 }
 
-pub async fn save_blocks(
-    pool: &DbPool,
-    blocks: Vec<BlockDto>,
-) -> eyre::Result<BlockDatabaseIds> {
-    info!("Saving blocks into database");
-    let mut query_builder = String::from(
-        r#"INSERT INTO eth.blocks (
-            block_hash,
-            block_number,
-            block_timestamp
-        ) VALUES "#,
-    );
-
-    query_builder.push_str(&get_placeholders_str(3, blocks.len()));
-    query_builder.push_str(
-        r#" ON CONFLICT (block_number) DO UPDATE SET block_number = EXCLUDED.block_number RETURNING id as db_id, block_number"#,
-    );
-
-    let mut query = sqlx::query_as::<_, BlockInsertResult>(&query_builder);
-
-    for block in blocks {
-        query = query
-            .bind(block.block_hash)
-            .bind(block.block_number)
-            .bind(block.block_timestamp);
-    }
-    let res = query.fetch_all(pool).await?;
-    let ids = res.into_iter().fold(
-        HashMap::<BigDecimal, i32>::new(),
-        |mut acc, x| {
-            acc.entry(x.block_number).or_insert_with(|| x.db_id);
-            acc
-        },
-    );
-
-    Ok(ids)
-}
+// pub async fn save_blocks(
+//     pool: &DbPool,
+//     blocks: Vec<BlockDto>,
+// ) -> eyre::Result<BlockDatabaseIds> {
+//     info!("Saving blocks into database");
+//     let mut query_builder = String::from(
+//         r#"INSERT INTO eth.blocks (
+//             block_hash,
+//             block_number,
+//             block_timestamp
+//         ) VALUES "#,
+//     );
+//
+//     query_builder.push_str(&get_placeholders_str(3, blocks.len()));
+//     query_builder.push_str(
+//         r#" ON CONFLICT (block_number) DO UPDATE SET block_number = EXCLUDED.block_number RETURNING id as db_id, block_number"#,
+//     );
+//
+//     let mut query = sqlx::query_as::<_, BlockInsertResult>(&query_builder);
+//
+//     for block in blocks {
+//         query = query
+//             .bind(block.block_hash)
+//             .bind(block.block_number)
+//             .bind(block.block_timestamp);
+//     }
+//     let res = query.fetch_all(pool).await?;
+//     let ids = res.into_iter().fold(
+//         HashMap::<BlockNumber, i32>::new(),
+//         |mut acc, x| {
+//             acc.entry(x.block_number)
+//                 .or_insert_with(|| x.db_id.try_into().unwrap());
+//             acc
+//         },
+//     );
+//
+//     Ok(ids)
+// }

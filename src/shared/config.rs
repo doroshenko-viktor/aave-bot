@@ -8,4 +8,5 @@ pub struct BlockchainConfig {
     pub aave_v3_wrapped_token_gateway_address: Address,
     pub aave_v3_paraswap_liquidity_swap_address: Address,
     pub aave_v3_paraswap_repay_adapter_address: Address,
+    pub ds_proxy_address: Address,
 }

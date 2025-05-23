@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-pub trait BlockchainEventService {
+pub trait BlockchainEventService: Send + Sync {
     fn handle_event(
         &self,
         event: BlockchainEvent,
@@ -29,7 +29,7 @@ pub trait BlockchainEventService {
 
 pub struct BlockchainEventsAccountBalancesService<P>
 where
-    P: BlockchainDataProviderFacade,
+    P: BlockchainDataProviderFacade + Send + Sync + 'static,
 {
     user_account_store: Arc<UserAccountStore>,
     blockchain_facade: P,
@@ -132,7 +132,7 @@ where
 
 impl<P> BlockchainEventsAccountBalancesService<P>
 where
-    P: BlockchainDataProviderFacade,
+    P: BlockchainDataProviderFacade + Send + Sync + 'static,
 {
     pub fn new(
         user_account_store: Arc<UserAccountStore>,
@@ -235,6 +235,8 @@ where
             == get_global_settings()
                 .blockchain
                 .aave_v3_paraswap_repay_adapter_address
+            || event_body.user.address
+                == get_global_settings().blockchain.ds_proxy_address
         {
             // In case of withdraw from paraswap repay adapter it will withdraw some collateral to swap
             // it and repay some debt. We need to find real user address
@@ -409,7 +411,7 @@ where
         let a_token_liquidated_amount = self
             .blockchain_facade
             .get_reserve_token_valuation(
-                collateral_token.a_token_address,
+                collateral_token.address,
                 event_body.liquidated_collateral_amount,
                 block_number,
             )

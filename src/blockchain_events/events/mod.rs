@@ -4,8 +4,11 @@ use super::{
 };
 use crate::{
     contracts::pool::Pool,
-    tokens::blockchain::{
-        contracts::IERC20, erc20_transfer::Erc20TransferEventDto,
+    tokens::{
+        TokenAddress,
+        blockchain::{
+            contracts::IERC20, erc20_transfer::Erc20TransferEventDto,
+        },
     },
 };
 use alloy::{hex, primitives::TxHash, rpc::types::Log, sol_types::SolEvent};
@@ -32,6 +35,52 @@ pub enum BlockchainEventBody {
     Withdraw(WithdrawEventDto),
     Liquidation(LiquidationEventDto),
     Erc20Transfer(Erc20TransferEventDto),
+}
+
+pub struct EventTokens {
+    pub collaterals: Vec<TokenAddress>,
+    pub debts: Vec<TokenAddress>,
+}
+
+impl EventTokens {
+    pub fn new(
+        collaterals: Vec<TokenAddress>,
+        debts: Vec<TokenAddress>,
+    ) -> Self {
+        Self { collaterals, debts }
+    }
+}
+
+impl BlockchainEventBody {
+    pub fn get_tokens(&self) -> EventTokens {
+        let tokens = match self {
+            BlockchainEventBody::Supply(supply_event_dto) => {
+                EventTokens::new(vec![supply_event_dto.reserve], vec![])
+            }
+            BlockchainEventBody::Borrow(borrow_event_dto) => {
+                EventTokens::new(vec![], vec![borrow_event_dto.reserve])
+            }
+            BlockchainEventBody::Repay(repay_event_dto) => {
+                EventTokens::new(vec![], vec![repay_event_dto.reserve])
+            }
+            BlockchainEventBody::Withdraw(withdraw_event_dto) => {
+                EventTokens::new(vec![withdraw_event_dto.reserve], vec![])
+            }
+            BlockchainEventBody::Liquidation(liquidation_event_dto) => {
+                EventTokens::new(
+                    vec![liquidation_event_dto.collateral_asset],
+                    vec![liquidation_event_dto.debt_asset],
+                )
+            }
+            BlockchainEventBody::Erc20Transfer(erc20_transfer_event_dto) => {
+                EventTokens::new(
+                    vec![erc20_transfer_event_dto.token_address],
+                    vec![],
+                )
+            }
+        };
+        tokens
+    }
 }
 
 impl TryFrom<&Log> for BlockchainEvent {

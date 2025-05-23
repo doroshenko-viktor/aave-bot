@@ -1,8 +1,12 @@
 use std::{fmt::format, sync::Arc};
 
-use alloy::{primitives::Address, rpc::types::Log};
+use alloy::{
+    primitives::{Address, TxHash},
+    rpc::types::Log,
+};
 use crossbeam_queue::SegQueue;
 use eyre::{OptionExt, Result};
+use hashbrown::HashSet;
 use tokio::sync::{
     Notify,
     mpsc::{Receiver, Sender},
@@ -11,9 +15,11 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     NodeWsProvider,
+    blockchain::BlockchainDataProviderFacade,
     blockchain_events::{
         self,
         events::{
+            BlockchainEventBody, EventTokens,
             event_log_parser::parse_event_logs,
             save::{convert_dtos, save_events},
         },
@@ -45,6 +51,7 @@ pub async fn subscribe_full_realtime_event_stream(
     db_pool: &DbPool,
     provider: &NodeWsProvider,
     config: &SubscribeEventsLogConfig,
+    blockchain_facade: impl BlockchainDataProviderFacade,
 ) -> Result<Receiver<BlockchainEvent>> {
     let (new_logs_buffer, mut rx, notify) =
         spawn_subscribe_realtime_event_logs_with_caching(&provider).await?;
@@ -58,8 +65,9 @@ pub async fn subscribe_full_realtime_event_stream(
         tokio::sync::mpsc::channel::<BlockchainEvent>(100);
 
     handle_downloaded_historical_events(
-        &db_pool,
-        &result_tx,
+        db_pool,
+        result_tx.clone(),
+        blockchain_facade,
         config.first_not_handled_block_number + 1,
         last_downloaded_block_id,
     )
@@ -67,7 +75,7 @@ pub async fn subscribe_full_realtime_event_stream(
     .unwrap();
 
     let last_blockchain_block_number =
-        match clients::blocks::get_current_block(&provider).await {
+        match clients::blocks::get_current_block(provider).await {
             Ok(val) => val,
             Err(err) => {
                 error!("Error on get current block: {}", err);
@@ -76,9 +84,9 @@ pub async fn subscribe_full_realtime_event_stream(
         };
 
     get_full_historical_events(
-        db_pool,
+        &db_pool,
         provider,
-        &result_tx,
+        result_tx.clone(),
         last_downloaded_block_id + 1,
         last_blockchain_block_number,
     )
@@ -91,9 +99,9 @@ pub async fn subscribe_full_realtime_event_stream(
     .await
     .unwrap();
     consume_logs_queue(
-        db_pool,
+        &db_pool,
         new_logs_buffer.clone(),
-        &result_tx,
+        result_tx.clone(),
     )
     .await
     .unwrap();
@@ -106,9 +114,9 @@ pub async fn subscribe_full_realtime_event_stream(
 
     // consuming queue one more time in case there are some logs added between main part consumed and channel notified to stop fill queue. normally there should be 0 or little event amount there
     consume_logs_queue(
-        db_pool,
+        &db_pool,
         new_logs_buffer.clone(),
-        &result_tx,
+        result_tx.clone(),
     )
     .await
     .unwrap();
@@ -125,7 +133,7 @@ pub async fn subscribe_full_realtime_event_stream(
                 events.push(persistence_event_dto);
 
                 if events.len() > batch_size {
-                    blockchain_events::save_events(db_pool, events)
+                    blockchain_events::save_events(&db_pool, events)
                         .await
                         .unwrap();
                     config_set(
@@ -145,9 +153,9 @@ pub async fn subscribe_full_realtime_event_stream(
         }
     }
     consume_logs_queue(
-        db_pool,
+        &db_pool,
         new_logs_buffer.clone(),
-        &result_tx,
+        result_tx.clone(),
     )
     .await
     .unwrap();
@@ -160,9 +168,9 @@ pub async fn subscribe_full_realtime_event_stream(
 
     // consuming queue one more time in case there are some logs added between main part consumed and channel notified to stop fill queue. normally there should be 0 or little event amount there
     consume_logs_queue(
-        db_pool,
+        &db_pool,
         new_logs_buffer.clone(),
-        &result_tx,
+        result_tx.clone(),
     )
     .await
     .unwrap();
@@ -460,7 +468,8 @@ async fn remove_handled_queue_events(
 */
 pub async fn handle_downloaded_historical_events(
     db_pool: &DbPool,
-    result_tx: &Sender<BlockchainEvent>,
+    result_tx: Sender<BlockchainEvent>,
+    blockchain_facade: impl BlockchainDataProviderFacade,
     first_not_handled_block_number: u64,
     last_downloaded_block_number: u64,
 ) -> Result<()> {
@@ -481,6 +490,29 @@ pub async fn handle_downloaded_historical_events(
         if events.is_empty() {
             break;
         }
+
+        let (transaction_hashes, reserve_tokens, debt_tokens) =
+            events.iter().fold(
+                (
+                    HashSet::<_>::new(),
+                    HashSet::<_>::new(),
+                    HashSet::<_>::new(),
+                ),
+                |mut acc, event| {
+                    let EventTokens { collaterals, debts } =
+                        event.body.get_tokens();
+                    acc.0.insert(event.transaction_hash);
+                    acc.1.insert((event.block_number, collaterals));
+                    acc.2.insert((event.block_number, debts));
+                    return acc;
+                },
+            );
+        blockchain_facade
+            .prefetch_transactions(transaction_hashes)
+            .await?;
+        // blockchain_facade
+        //     .prefetch_normalized_income(reserve_tokens, debt_tokens)
+        //     .await?;
 
         for event in events {
             result_tx.send(event).await?;
@@ -505,7 +537,7 @@ pub async fn handle_downloaded_historical_events(
 pub async fn get_full_historical_events(
     pool: &DbPool,
     provider: &NodeWsProvider,
-    result_tx: &Sender<BlockchainEvent>,
+    result_tx: Sender<BlockchainEvent>,
     first_block_number: u64,
     last_block_number: u64,
 ) -> Result<()> {
@@ -827,7 +859,7 @@ pub async fn get_historical_aave_events(
 async fn consume_logs_queue(
     db_pool: &DbPool,
     queue: Arc<SegQueue<Log>>,
-    result_tx: &Sender<BlockchainEvent>,
+    result_tx: Sender<BlockchainEvent>,
 ) -> Result<()> {
     loop {
         let logs = {

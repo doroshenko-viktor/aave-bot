@@ -1,15 +1,20 @@
 use alloy::{
     providers::{
-        Identity, ProviderBuilder, RootProvider,
+        Identity, Provider, ProviderBuilder, RootProvider,
         fillers::{
             BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill,
             NonceFiller,
         },
     },
-    transports::{http::reqwest, ws::WsConnect},
+    rpc::client::RpcClient,
+    transports::{
+        http::{Http, reqwest},
+        ws::WsConnect,
+    },
 };
 use dotenv::dotenv;
 use eyre::{Error, Result};
+use reqwest::Url;
 use sqlx::postgres::PgPoolOptions;
 use std::{env, str::FromStr};
 use tracing::{debug, error};
@@ -149,12 +154,17 @@ pub async fn get_new_stream_rpc_provider(
     Ok(provider)
 }
 
+pub fn get_new_rpc_client(url: Url) -> Result<RpcClient> {
+    let transport = Http::new(url);
+    let client = RpcClient::new(transport, false);
+    Ok(client)
+}
+
 pub fn get_new_rpc_provider(
     config: &RpcProviderConfig,
 ) -> Result<NodeHttpProvider> {
-    let provider = ProviderBuilder::new().on_http(reqwest::Url::from_str(
-        &config.node_url,
-    )?);
+    let url = reqwest::Url::from_str(&config.node_url)?;
+    let provider = ProviderBuilder::new().on_http(url);
 
     Ok(provider)
 }

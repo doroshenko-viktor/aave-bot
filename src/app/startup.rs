@@ -5,6 +5,7 @@ use super::{
 use crate::{
     NodeWsProvider,
     accounts::UserAccountStore,
+    blockchain::BlockchainDataProviderFacade,
     blockchain_events::{self, SubscribeEventsLogConfig},
     price_feed::{self, PriceFeedConfig},
     shared::persistence::DbPool,
@@ -16,17 +17,19 @@ use std::{sync::Arc, time::Duration};
 Start full app functionality with spawning all background jobs and handlers
 */
 pub async fn start_full_app<T>(
-    db_pool: DbPool,
+    db_pool: &'static DbPool,
     provider: NodeWsProvider,
     user_account_store: Arc<UserAccountStore>,
-    blockchain_event_parser: impl BlockchainEventService + Send + Sync + 'static,
+    blockchain_event_parser: impl BlockchainEventService + 'static,
     price_changes_handler: impl PriceChangesHandler + Send + Sync + 'static,
+    blockchain_facade: impl BlockchainDataProviderFacade + 'static,
     config: AppConfig,
 ) -> Result<()> {
     start_account_balances_tracking(
         db_pool,
         provider,
         blockchain_event_parser,
+        blockchain_facade,
         SubscribeEventsLogConfig {
             first_not_handled_block_number: user_account_store
                 .get_last_block_number()
@@ -75,18 +78,22 @@ where
 Subscribes to price feeds from supported sources and runs the corresponding handlers for these feeds.
 */
 pub async fn start_account_balances_tracking(
-    db_pool: DbPool,
+    db_pool: &DbPool,
     provider: NodeWsProvider,
-    blockchain_event_parser: impl BlockchainEventService + Send + Sync + 'static,
+    blockchain_event_service: impl BlockchainEventService + 'static,
+    blockchain_facade: impl BlockchainDataProviderFacade + 'static,
     config: SubscribeEventsLogConfig,
 ) -> Result<(), eyre::Error> {
     let aave_events_rx =
         blockchain_events::handle_events::subscribe_full_realtime_event_stream(
-            &db_pool, &provider, &config,
+            db_pool,
+            &provider,
+            &config,
+            blockchain_facade,
         )
         .await?;
     tasks::start_handling_account_state_changes(
-        blockchain_event_parser,
+        blockchain_event_service,
         aave_events_rx,
     )
     .await?;

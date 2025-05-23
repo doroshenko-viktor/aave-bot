@@ -162,8 +162,8 @@ impl UserAccount {
             .entry(token.id)
             .and_modify(|val| {
                 info!(
-                    "Existing collateral amount {}",
-                    val.amount
+                    "Account address: {:#x}; Existing collateral amount {}",
+                    self.address, val.amount
                 );
                 val.amount += &data.native_token_amount;
                 val.a_token_amount += &data.reserve_token_amount;
@@ -173,7 +173,7 @@ impl UserAccount {
                 );
             })
             .or_insert_with(|| {
-                debug!(
+                info!(
                     "Adding collateral with init amount {}",
                     data.native_token_amount
                 );

@@ -136,7 +136,10 @@ const MovementsFilterForm = ({ initFilters, onFilter }: Props) => {
             </Portal>
           </Select.Root>
         </Field.Root>
-        <Button type="submit" colorScheme="teal" alignSelf="flex-end">
+        <Button variant="subtle" alignSelf="flex-end" onClick={() => setFilters(initFilters)}>
+          Clear
+        </Button>
+        <Button type="submit" alignSelf="flex-end">
           Filter
         </Button>
       </Stack>

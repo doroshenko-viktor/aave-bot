@@ -1,6 +1,7 @@
 import {
   Box, Heading, Spinner, Table,
 } from "@chakra-ui/react";
+
 import { useMemo, useState } from "react";
 import logger from "../../lib/logger";
 import type { Movement } from "../../lib/types/movment";
@@ -8,6 +9,8 @@ import useMovementsData, { type MovementsSearchParams } from "../../lib/clients/
 import MovementsFilterForm from "./filter-form";
 import useTokensData from "../../lib/clients/tokens";
 import AmountRepr from "../ui/amount-repr";
+import { Tooltip } from "../ui/tooltip";
+import AddressRepr from "../ui/address-repr";
 
 export default function MovementHistory() {
   const [searchParams, setSearchParams] = useState<MovementsSearchParams>({
@@ -91,7 +94,7 @@ function AaveMovementRow({ id, movement, token_symbol }: { id: number, movement:
   return (
     <Table.Row key={id}>
       <Table.Cell>{movement.event_type}</Table.Cell>
-      <Table.Cell>0x{movement.account_address}</Table.Cell>
+      <Table.Cell><AddressRepr>{movement.account_address}</AddressRepr></Table.Cell>
       <Table.Cell>{token_symbol}</Table.Cell>
       <Table.Cell> <AmountRepr weiAmount={movement.native_token_amount} /></Table.Cell>
     </Table.Row>

@@ -14,6 +14,8 @@ use aave_bot::{
 };
 use alloy::primitives::Address;
 use eyre::Result;
+use reqwest::Url;
+use sqlx::Acquire;
 use tracing::{error, info, warn};
 
 #[tokio::main]
@@ -25,18 +27,27 @@ pub async fn main() -> eyre::Result<()> {
     let config = globals::get_global_settings().clone();
     let db_pool = globals::get_db_pool();
     let provider = setup::get_new_rpc_provider(&config.rpc_config)?;
+    let rpc_client = setup::get_new_rpc_client(Url::from_str(
+        &config.rpc_config.node_url,
+    )?)?;
+
     let pool_contract = AavePoolContractBlockchainImpl::new(
         provider.clone(),
+        rpc_client.clone(),
         Address::from_str(&config.blockchain.aave_v3_pool_contract_address)?,
     );
+
     let user_account_store =
         Arc::new(accounts::restore_user_account_store(db_pool).await?);
-    let blockchain_facade =
-        BlockchainDataProviderFacadeImpl::new(provider, pool_contract);
+    let blockchain_facade = BlockchainDataProviderFacadeImpl::new(
+        provider,
+        rpc_client,
+        pool_contract,
+    );
 
     let blockchain_event_parser = BlockchainEventsAccountBalancesService::new(
         user_account_store.clone(),
-        blockchain_facade,
+        blockchain_facade.clone(),
     );
 
     info!(
@@ -60,7 +71,8 @@ pub async fn main() -> eyre::Result<()> {
             tokio::task::yield_now().await;
             if let Err(err) = blockchain_events::handle_events::handle_downloaded_historical_events(
                 db_pool,
-                &result_tx,
+                result_tx,
+                blockchain_facade,
                 user_account_store.get_last_block_number() + 1,
                 last_downloaded_block_number,
             )

@@ -26,12 +26,12 @@ pub async fn get_events_paginated(
             body
         from blockchain.events
         where block_number >= $1 and block_number <= $2
-     --   and (
-		--body ->> 'user' = '0x5115563fe64378f3a645c97e24c4c8d640a04c67'
-		--	or body ->> 'on_behalf_of' = '0x5115563fe64378f3a645c97e24c4c8d640a04c67'
-		--	or body ->> 'from' = '0x5115563fe64378f3a645c97e24c4c8d640a04c67'
-		--	or body ->> 'to' = '0x5115563fe64378f3a645c97e24c4c8d640a04c67'
-		--	)
+--        and (
+ --           body ->> 'user' = '0x989a83e2eb8304eed6e0e9b498d901259e776097'
+  --          or body ->> 'on_behalf_of' = '0x989a83e2eb8304eed6e0e9b498d901259e776097'
+   --         or body ->> 'from' = '0x989a83e2eb8304eed6e0e9b498d901259e776097'
+    --        or body ->> 'to' = '0x989a83e2eb8304eed6e0e9b498d901259e776097'
+     --   )
         order by block_number, log_number asc
         offset $3
         limit $4;
