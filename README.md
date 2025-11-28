@@ -1,7 +1,69 @@
-# aave-bot
+# AAVE-Bot: Real-Time AAVE Protocol Monitoring System
 
-rayon
-async streams
+## Project Overview
+
+AAVE-Bot is a blockchain monitoring and data aggregation system designed to track user interactions with the AAVE lending protocol in real-time. While originally conceived as a bad debt liquidation bot, the project currently focuses on the foundational data gathering and analysis layer.
+
+### Original Vision
+
+This is more of a Rust study project aimed to apply rust on real world blockchain scenario.
+
+The initial goal was to build an **automated liquidation bot** that would:
+
+- Monitor AAVE protocol accounts for unhealthy positions
+- Detect accounts approaching liquidation thresholds
+- Execute liquidations to capture liquidation bonuses
+- Manage risk and profitability of liquidation operations
+
+### Current State
+
+Currently it is a **real-time data monitoring and aggregation platform** that serves as the foundation for any liquidation strategy. The project implements:
+
+- **Real-time Event Monitoring**: Tracks all AAVE protocol activities (supply, borrow, repay, withdraw, liquidations)
+- **Account State Management**: Maintains accurate collateral and debt balances for all monitored accounts
+- **Health Factor Calculation**: Computes account health factors to assess liquidation risk
+- **Multi-Source Price Aggregation**: Integrates price data from Bybit, Chainlink, and Pyth oracles
+- **REST API**: Exposes account movements and token data for external consumption
+- **Persistent Data Store**: PostgreSQL backend for event history and configuration
+
+### Project Goals
+
+This project serves dual purposes for me:
+
+1. **Educational**: A hands-on learning project to master:
+   - Modern Rust application development for real-world scenarios
+   - Blockchain interaction and Web3 programming concepts
+   - Async/concurrent Rust patterns with Tokio
+   - Building scalable, production-grade systems in Rust
+   - Working with relational databases and migrations with Rust
+
+2. **Foundation for Liquidation Logic**: Provides a data layer that could be extended with liquidation execution capabilities
+
+### Project Status
+
+**Implementation Stage**: Data gathering and analysis(No actual liquidation)
+
+The liquidation execution layer has not been implemented. While the project has been deprioritized due to other commitments, it represents technical work demonstrating:
+
+- Rust architecture
+- async/concurrent patterns
+- Real-world blockchain data handling
+- Scalable system design
+
+This codebase serves as a reference implementation for building blockchain monitoring systems and can be extended with liquidation logic or adapted for other DeFi monitoring use cases.
+
+**Note:** You may find some secrets in git history. I understand that this is not suitable for production - currently all of them are invalid and can't be used - this was just a little speed boos on init stage of the project which was private. At this moment there is a configuration which accepts env variables in place.
+
+---
+
+## Technical Stack
+
+**Backend**: Rust with Tokio (async runtime), Axum (web framework), Alloy (Ethereum interaction)
+**Database**: PostgreSQL with sqlx migrations
+**Frontend**: React 19, Vite, Chakra UI
+**Price Feeds**: WebSocket integration with Bybit, Chainlink, and Pyth
+
+---
 
 ## Run
 
@@ -17,16 +79,16 @@ Then run the application:
 cargo watch -q -x "run --bin web_api --features dev"
 ```
 
+Or run specific binary:
+
+```bash
+cargo run --bin precalculate_user_balances<or other from ./src/bin/>
+```
+
 ## Links
 
 [Smart contracts docs](https://aave.com/docs/developers/smart-contracts)
 [Ethers-Rs Docs](https://www.gakonst.com/ethers-rs/)
-
-## Onchain Data
-
-16496817
-Repay event - first block 16497341
-16498089; // withdraw event block
 
 ## TODO
 

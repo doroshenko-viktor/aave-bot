@@ -1,5 +1,8 @@
+# Configuration Example
+# Copy this file and customize it for your environment
+# Update the placeholders with your actual values
+
 [app]
-# first_block = 16496817
 indexing_step = 10000
 
 [app.price_feed]
@@ -10,12 +13,14 @@ low_health_factor_threshold = 1.2
 
 [postgres]
 max_connections = 10
+# Update with your PostgreSQL credentials
 url = "postgres://bot:password@localhost:5432/aave_bot"
 
 [rpc_config]
 max_node_credits = 200
 max_node_burst_size = 200
 max_blockchain_retry_count = 5
+# Get your own Infura key from https://infura.io
 node_ws_url = "wss://mainnet.infura.io/ws/v3/YOUR_INFURA_KEY"
 node_url = "https://mainnet.infura.io/v3/YOUR_INFURA_KEY"
 

@@ -25,3 +25,24 @@ Cargo.lock
 
 /target
 .DS_Store
+
+# Environment variables and secrets
+# .env
+# .env.local
+# .env.*.local
+
+# Local configuration overrides
+config/dev.toml
+config/test.toml
+config/local.toml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
