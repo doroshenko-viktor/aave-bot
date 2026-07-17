@@ -127,7 +127,7 @@ async fn get_last_downloaded_block_number() -> Result<u64> {
     .await?;
 
     let last_downloaded_transfers_block_number = configuration::get_as::<u64>(
-        ConfigurationKey::LastDownloadedAaveEventsBlock,
+        ConfigurationKey::LastDownloadedTransfersBlock,
     )
     .await?;
 

@@ -249,16 +249,15 @@ impl UserAccount {
                 }
 
                 let precision = Uint::from(PRECISION); // TODO: optimization-move to constants...
-                if val.a_token_amount
-                    < event_data.reserve_token_amount - precision
-                {
+                let min_required = event_data.reserve_token_amount.saturating_sub(precision);
+                if val.a_token_amount < min_required {
                     return Err(eyre::eyre!(
                         "Withdrawal of {} reserve token is less than balance({})",
                         event_data.reserve_token_amount,
                         val.a_token_amount
                     ));
                 } else {
-                    val.a_token_amount -= &event_data.reserve_token_amount;
+                    val.a_token_amount = val.a_token_amount.saturating_sub(event_data.reserve_token_amount);
                 }
                 info!(
                     "Withdraw updated a-token-amount: {}; collateral amount {}",
@@ -295,7 +294,8 @@ impl UserAccount {
             token.get_repr(asset.amount)?
         );
         let precision = Uint::from(PRECISION); // TODO: optimization-move to constants...
-        if asset.debt_token_amount < event_body.reserve_token_amount - precision
+        let min_required = event_body.reserve_token_amount.saturating_sub(precision);
+        if asset.debt_token_amount < min_required
         {
             return Err(eyre!(
                 "Debt amount {} is less than {}",
@@ -303,7 +303,7 @@ impl UserAccount {
                 token.get_repr(event_body.reserve_token_amount)?
             ));
         }
-        asset.debt_token_amount -= event_body.reserve_token_amount;
+        asset.debt_token_amount = asset.debt_token_amount.saturating_sub(event_body.reserve_token_amount);
 
         if asset.amount < event_body.native_token_amount {
             asset.amount = Uint::from(0);
